@@ -55,12 +55,23 @@ runs on the Hetzner instance at a URL Yan can open.
 - Distribution in prod: Mario 54 (BMS_*), Yan 54 (opener fallback),
   Ana 43 (MOTOR_*), JP 25 (ES dealers), Kris 24 (DE dealers).
 
-## M4 — Documents (storage only)
+## M4 — Auth + admin dashboard (DONE 2026-05-25)
+- Argon2id password hashing + server-side sessions (HMAC-signed cookie). ✅
+- Password reset via SMTP, with log fallback when no SMTP configured. ✅
+- Login / logout / forgot / reset pages (Templ, minimal AuthShell). ✅
+- AuthMiddleware: cookie -> ctx; unauth GET -> /login?return=... ✅
+- AdminOnly guard: role=admin gated /admin/* (others get 403). ✅
+- Admin dashboard: /admin overview + /admin/users (invite/edit/reset/
+  deactivate) + /admin/rules (list/create) + /admin/dealers (list/create). ✅
+- Brute-force resistance: 5 failures / 15 min triggers 60s block. ✅
+- Seeder sets dev password 'stele-dev-2026' (Yan=admin, others=ops). ✅
+- Filtro Assignee bonus su Triage/Classified/Closed tabs. ✅
+
+## M5 — Documents (storage only)
 - Attach PDF to a case via event. Filesystem under `/data/documents/`,
   sha256 in event, no bytea in DB.
 - UI: documents alongside the event timeline; download link; no extraction.
-- Text extraction deferred to a later milestone when there is a concrete
-  consumer (full-text search, AI features).
+- Text extraction deferred indefinitely (no concrete consumer yet).
 
 ## M4 — Relations
 - Vehicles (VIN), Parts (SKU), Dealers (code).
@@ -68,12 +79,12 @@ runs on the Hetzner instance at a URL Yan can open.
 - Projection joins: "claims by dealer", "claims for VIN".
 - Synthetic dataset extended.
 
-## M5 — Time-travel
+## M6 — Time-travel
 - API: state as of `(occurred_at, recorded_at)`.
 - UI: dual date pickers.
 - Bug-bash: corrections (backdated events) must reproject correctly.
 
-## M6 — Schema-as-git
+## M7 — Schema-as-git
 - Schema changes (new event type, new field) modeled as commits.
 - Branch projection definitions, test on synthetic data, merge.
 - Most speculative milestone; revisit after M5.
