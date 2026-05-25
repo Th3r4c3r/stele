@@ -1,0 +1,388 @@
+package templates
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/Th3r4c3r/stele/internal/fault"
+)
+
+// AdminUser is the projection for admin/users views.
+type AdminUser struct {
+	ID              uuid.UUID
+	Email           string
+	Name            string
+	Role            string
+	Region          *string
+	Specializations []string
+	DeactivatedAt   *time.Time
+	HasPassword     bool
+}
+
+// AdminDealer mirrors the dealers row for admin views.
+type AdminDealer struct {
+	Code    string
+	Name    string
+	Region  string
+	Country string
+}
+
+// AdminRule mirrors an assignment_rules row for admin views.
+type AdminRule struct {
+	ID                uuid.UUID
+	Name              string
+	Priority          int
+	MatchFaultPrefix  string
+	MatchDealerRegion string
+	AssigneeName      string
+	AssigneeID        uuid.UUID
+	Active            bool
+}
+
+// AdminOverview is the /admin landing.
+templ AdminOverview(activeUsers, deactivatedUsers, dealers, rules, sessions int) {
+	@AdminShell("Admin") {
+		<section class="page-head"><h1>Admin</h1></section>
+		<ul class="overview">
+			<li><strong>{ fmt.Sprint(activeUsers) }</strong> active users <span class="muted">/ { fmt.Sprint(deactivatedUsers) } deactivated</span> — <a href="/admin/users">manage</a></li>
+			<li><strong>{ fmt.Sprint(rules) }</strong> assignment rules — <a href="/admin/rules">manage</a></li>
+			<li><strong>{ fmt.Sprint(dealers) }</strong> dealers — <a href="/admin/dealers">manage</a></li>
+			<li><strong>{ fmt.Sprint(sessions) }</strong> active sessions</li>
+		</ul>
+	}
+}
+
+// AdminUsersPage lists users + a create form.
+templ AdminUsersPage(users []AdminUser, form AdminUserFormData) {
+	@AdminShell("Admin · users") {
+		<section class="page-head">
+			<h1>Users</h1>
+			<a href="/admin" class="btn">Back</a>
+		</section>
+		<section>
+			<h2>Existing</h2>
+			<table class="claims admin">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Email</th>
+						<th>Role</th>
+						<th>Region</th>
+						<th>Specializations</th>
+						<th>Status</th>
+						<th>Password</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, u := range users {
+						<tr>
+							<td>{ u.Name }</td>
+							<td><code>{ u.Email }</code></td>
+							<td>{ u.Role }</td>
+							<td>
+								if u.Region != nil {
+									{ *u.Region }
+								} else {
+									<span class="muted">all</span>
+								}
+							</td>
+							<td>{ joinComma(u.Specializations) }</td>
+							<td>
+								if u.DeactivatedAt != nil {
+									<span class="badge status-closed">deactivated</span>
+								} else {
+									<span class="badge status-classified">active</span>
+								}
+							</td>
+							<td>
+								if u.HasPassword {
+									<span class="muted">set</span>
+								} else {
+									<span class="muted">none</span>
+								}
+							</td>
+							<td>
+								<a href={ templ.URL("/admin/users/" + u.ID.String()) }>Edit</a>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</section>
+		<section>
+			<h2>Invite a new user</h2>
+			@AdminUserForm("", form)
+		</section>
+	}
+}
+
+type AdminUserFormData struct {
+	Email           string
+	Name            string
+	Role            string
+	Region          string
+	Specializations string // comma-separated in the form
+	ErrorMsg        string
+	SuccessMsg      string
+}
+
+templ AdminUserForm(actionID string, data AdminUserFormData) {
+	<form method="POST" action={ templ.URL(userFormAction(actionID)) } class="form">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		if data.SuccessMsg != "" {
+			<p class="muted">{ data.SuccessMsg }</p>
+		}
+		<label>
+			Email
+			<input name="email" type="email" required value={ data.Email }/>
+		</label>
+		<label>
+			Name
+			<input name="name" required value={ data.Name }/>
+		</label>
+		<label>
+			Role
+			<select name="role">
+				@roleOption("ops", data.Role)
+				@roleOption("admin", data.Role)
+				@roleOption("battery_specialist", data.Role)
+				@roleOption("motor_specialist", data.Role)
+				@roleOption("regional_ops", data.Role)
+			</select>
+		</label>
+		<label>
+			Region (optional)
+			<input name="region" value={ data.Region } placeholder="IT / FR / ES / DE"/>
+		</label>
+		<label>
+			Specializations (comma-separated fault prefixes)
+			<input name="specializations" value={ data.Specializations } placeholder="BMS_, CHARGER_"/>
+		</label>
+		<div class="form-actions">
+			if actionID == "" {
+				<button type="submit" class="btn primary">Invite (send reset link)</button>
+			} else {
+				<button type="submit" class="btn primary">Save</button>
+			}
+		</div>
+	</form>
+}
+
+templ roleOption(value string, current string) {
+	if value == current {
+		<option value={ value } selected>{ value }</option>
+	} else {
+		<option value={ value }>{ value }</option>
+	}
+}
+
+templ AdminUserEditPage(u AdminUser, form AdminUserFormData) {
+	@AdminShell("Admin · user " + u.Email) {
+		<section class="page-head">
+			<h1>Edit user</h1>
+			<a href="/admin/users" class="btn">Back</a>
+		</section>
+		@AdminUserForm(u.ID.String(), form)
+		<section>
+			<h2>Account actions</h2>
+			<form method="POST" action={ templ.URL("/admin/users/" + u.ID.String() + "/reset") } class="form inline">
+				<button type="submit" class="btn">Send password reset link</button>
+			</form>
+			if u.DeactivatedAt == nil {
+				<form method="POST" action={ templ.URL("/admin/users/" + u.ID.String() + "/deactivate") } class="form inline">
+					<button type="submit" class="btn danger">Deactivate account</button>
+				</form>
+			} else {
+				<form method="POST" action={ templ.URL("/admin/users/" + u.ID.String() + "/reactivate") } class="form inline">
+					<button type="submit" class="btn">Reactivate account</button>
+				</form>
+			}
+		</section>
+	}
+}
+
+// AdminRulesPage list + create form.
+templ AdminRulesPage(rules []AdminRule, assignees []UserOption, form AdminRuleFormData) {
+	@AdminShell("Admin · rules") {
+		<section class="page-head">
+			<h1>Assignment rules</h1>
+			<a href="/admin" class="btn">Back</a>
+		</section>
+		<table class="claims admin">
+			<thead>
+				<tr>
+					<th>Priority</th>
+					<th>Name</th>
+					<th>Fault prefix</th>
+					<th>Dealer region</th>
+					<th>Assignee</th>
+					<th>Active</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, r := range rules {
+					<tr>
+						<td>{ fmt.Sprint(r.Priority) }</td>
+						<td>{ r.Name }</td>
+						<td>
+							if r.MatchFaultPrefix != "" {
+								<code>{ r.MatchFaultPrefix }</code>
+							} else {
+								<span class="muted">—</span>
+							}
+						</td>
+						<td>
+							if r.MatchDealerRegion != "" {
+								{ r.MatchDealerRegion }
+							} else {
+								<span class="muted">—</span>
+							}
+						</td>
+						<td>{ r.AssigneeName }</td>
+						<td>
+							if r.Active {
+								<span class="badge status-classified">active</span>
+							} else {
+								<span class="badge status-closed">off</span>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+		<section>
+			<h2>New rule</h2>
+			@AdminRuleForm(assignees, form)
+		</section>
+	}
+}
+
+type AdminRuleFormData struct {
+	Name              string
+	Priority          string
+	MatchFaultPrefix  string
+	MatchDealerRegion string
+	AssigneeID        string
+	ErrorMsg          string
+}
+
+templ AdminRuleForm(assignees []UserOption, data AdminRuleFormData) {
+	<form method="POST" action="/admin/rules" class="form">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		<label>
+			Name
+			<input name="name" required value={ data.Name }/>
+		</label>
+		<label>
+			Priority (lower = first)
+			<input name="priority" type="number" required min="1" value={ data.Priority }/>
+		</label>
+		<label>
+			Fault code prefix (e.g. BMS_)
+			<input name="match_fault_prefix" value={ data.MatchFaultPrefix } placeholder="leave empty to skip"/>
+		</label>
+		<label>
+			Dealer region (e.g. ES)
+			<input name="match_dealer_region" value={ data.MatchDealerRegion } placeholder="leave empty to skip"/>
+		</label>
+		<label>
+			Assignee
+			<select name="assignee_id" required>
+				<option value="">— pick one —</option>
+				for _, u := range assignees {
+					if u.ID.String() == data.AssigneeID {
+						<option value={ u.ID.String() } selected>{ u.Label }</option>
+					} else {
+						<option value={ u.ID.String() }>{ u.Label }</option>
+					}
+				}
+			</select>
+		</label>
+		<button type="submit" class="btn primary">Create rule</button>
+	</form>
+}
+
+templ AdminDealersPage(dealers []AdminDealer, form AdminDealerFormData) {
+	@AdminShell("Admin · dealers") {
+		<section class="page-head">
+			<h1>Dealers</h1>
+			<a href="/admin" class="btn">Back</a>
+		</section>
+		<table class="claims admin">
+			<thead>
+				<tr><th>Code</th><th>Name</th><th>Region</th><th>Country</th></tr>
+			</thead>
+			<tbody>
+				for _, d := range dealers {
+					<tr>
+						<td><code>{ d.Code }</code></td>
+						<td>{ d.Name }</td>
+						<td>{ d.Region }</td>
+						<td>{ d.Country }</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+		<section>
+			<h2>New dealer</h2>
+			@AdminDealerForm(form)
+		</section>
+	}
+}
+
+type AdminDealerFormData struct {
+	Code     string
+	Name     string
+	Region   string
+	Country  string
+	ErrorMsg string
+}
+
+templ AdminDealerForm(data AdminDealerFormData) {
+	<form method="POST" action="/admin/dealers" class="form">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		<label>
+			Code
+			<input name="code" required value={ data.Code } placeholder="DEALER_13"/>
+		</label>
+		<label>
+			Name
+			<input name="name" required value={ data.Name }/>
+		</label>
+		<label>
+			Region
+			<input name="region" required value={ data.Region } placeholder="IT / FR / ES / DE"/>
+		</label>
+		<label>
+			Country
+			<input name="country" required value={ data.Country }/>
+		</label>
+		<button type="submit" class="btn primary">Create dealer</button>
+	</form>
+}
+
+// AdminShell wraps an admin page with the standard chrome but adds a
+// secondary nav row pointing to the three management pages.
+templ AdminShell(title string) {
+	@Layout(title) {
+		<nav class="admin-nav">
+			<a href="/admin">Overview</a>
+			<a href="/admin/users">Users</a>
+			<a href="/admin/rules">Rules</a>
+			<a href="/admin/dealers">Dealers</a>
+		</nav>
+		{ children... }
+	}
+}
+
+// (Suppress unused fault import warning; some templates above use it indirectly.)
+var _ = fault.AllKinds

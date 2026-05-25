@@ -1,0 +1,124 @@
+package templates
+
+// LoginPage is the login form (no Layout-internal nav since the user
+// isn't authenticated yet).
+templ LoginPage(returnTo string, data LoginFormData) {
+	@AuthShell("Sign in") {
+		<h1>Sign in</h1>
+		@LoginForm(returnTo, data)
+		<p class="muted login-aux">
+			<a href="/forgot">Forgot your password?</a>
+		</p>
+	}
+}
+
+type LoginFormData struct {
+	Email    string
+	ErrorMsg string
+}
+
+templ LoginForm(returnTo string, data LoginFormData) {
+	<form method="POST" action="/login" class="form auth-form">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		<input type="hidden" name="return" value={ returnTo }/>
+		<label>
+			Email
+			<input name="email" type="email" required autocomplete="username" autofocus value={ data.Email }/>
+		</label>
+		<label>
+			Password
+			<input name="password" type="password" required autocomplete="current-password"/>
+		</label>
+		<button type="submit" class="btn primary">Sign in</button>
+	</form>
+}
+
+// ForgotPage requests an email to send the reset link to.
+templ ForgotPage(data ForgotFormData) {
+	@AuthShell("Reset your password") {
+		<h1>Reset your password</h1>
+		<p class="muted">Enter your email; if it matches an account we will send a reset link.</p>
+		@ForgotForm(data)
+		<p class="muted login-aux"><a href="/login">Back to sign in</a></p>
+	}
+}
+
+type ForgotFormData struct {
+	Email     string
+	ErrorMsg  string
+	Submitted bool
+}
+
+templ ForgotForm(data ForgotFormData) {
+	<form method="POST" action="/forgot" class="form auth-form">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		if data.Submitted {
+			<p class="muted">If that email is on file, a reset link is on its way (or in the server logs in dev mode).</p>
+		} else {
+			<label>
+				Email
+				<input name="email" type="email" required autofocus value={ data.Email }/>
+			</label>
+			<button type="submit" class="btn primary">Send reset link</button>
+		}
+	</form>
+}
+
+// ResetPage is the new-password form after clicking the email link.
+templ ResetPage(token string, data ResetFormData) {
+	@AuthShell("Choose a new password") {
+		<h1>Choose a new password</h1>
+		@ResetForm(token, data)
+	}
+}
+
+type ResetFormData struct {
+	ErrorMsg string
+	Success  bool
+}
+
+templ ResetForm(token string, data ResetFormData) {
+	if data.Success {
+		<p class="muted">Password updated. <a href="/login">Sign in.</a></p>
+	} else {
+		<form method="POST" action="/reset" class="form auth-form">
+			if data.ErrorMsg != "" {
+				<p class="error">{ data.ErrorMsg }</p>
+			}
+			<input type="hidden" name="token" value={ token }/>
+			<label>
+				New password (min 10 chars)
+				<input name="password" type="password" required minlength="10" autocomplete="new-password" autofocus/>
+			</label>
+			<label>
+				Confirm
+				<input name="password2" type="password" required minlength="10" autocomplete="new-password"/>
+			</label>
+			<button type="submit" class="btn primary">Update password</button>
+		</form>
+	}
+}
+
+// AuthShell is a minimal layout for unauthenticated pages: no top nav,
+// centered narrow column.
+templ AuthShell(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } — Stele</title>
+			<link rel="stylesheet" href="/static/stele.css"/>
+		</head>
+		<body class="auth-body">
+			<main class="auth-main">
+				<a class="brand" href="/">Stele</a>
+				{ children... }
+			</main>
+		</body>
+	</html>
+}

@@ -18,8 +18,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Th3r4c3r/stele/internal/auth"
+	"github.com/Th3r4c3r/stele/internal/dealer"
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/fault"
+	"github.com/Th3r4c3r/stele/internal/mail"
 	"github.com/Th3r4c3r/stele/internal/migrate"
 	"github.com/Th3r4c3r/stele/internal/projection"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
@@ -93,17 +96,40 @@ func runServer() int {
 	slog.Info("projection runner started", "projectors", runner.Names())
 
 	userRepo := userpkg.NewRepo(pool)
+	dealerRepo := dealer.NewRepo(pool)
 	resolver := fault.NewPgResolver(pool)
-	currentUserMW, err := web.NewCurrentUserMiddleware(ctx, userRepo)
+
+	secret := []byte(os.Getenv("STELE_SESSION_SECRET"))
+	sessions, err := auth.NewSessions(pool, secret)
 	if err != nil {
-		slog.Error("current-user middleware", "err", err,
-			"hint", "ensure STELE_DEFAULT_USER_EMAIL maps to a seeded user (run stele-seed first)")
+		slog.Error("session secret invalid", "err", err,
+			"hint", "STELE_SESSION_SECRET must be at least 32 bytes; generate one with 'openssl rand -base64 32'")
 		return 1
 	}
+	go func() {
+		// Best-effort housekeeping; loss on restart is fine.
+		if n, err := sessions.PurgeExpired(ctx); err == nil && n > 0 {
+			slog.Info("sessions purged on boot", "n", n)
+		}
+	}()
+	resets := auth.NewResetTokens(pool)
+	rateLimit := auth.NewLoginRateLimit()
+	mailer := mail.FromEnv()
+	baseURL := envOr("STELE_BASE_URL", "https://stele.178-105-44-164.nip.io")
 
 	mux := http.NewServeMux()
-	// Fault-case UI + static assets, wrapped in the current-user injector.
-	web.Mount(mux, pool, store, resolver, userRepo, currentUserMW)
+	web.Mount(mux, web.Deps{
+		Pool:       pool,
+		Store:      store,
+		Resolver:   resolver,
+		Users:      userRepo,
+		Dealers:    dealerRepo,
+		Sessions:   sessions,
+		Resets:     resets,
+		RateLimit:  rateLimit,
+		MailSender: mailer,
+		BaseURL:    baseURL,
+	})
 	// Operational + debug endpoints retained from M1.
 	mux.HandleFunc("GET /healthz", healthzHandler(pool))
 	mux.HandleFunc("POST /debug/event", appendDebugEvent(store))

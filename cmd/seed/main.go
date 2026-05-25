@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Th3r4c3r/stele/internal/auth"
 	"github.com/Th3r4c3r/stele/internal/dealer"
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/fault"
@@ -35,10 +36,14 @@ import (
 	"github.com/Th3r4c3r/stele/migrations"
 )
 
+// DevPassword is the dev/seed password assigned to every seeded user.
+// Echoed to stderr at seed time so it cannot be silently forgotten.
+const DevPassword = "stele-dev-2026"
+
 // Master data definitions — fully synthetic.
 
 var seedUsers = []user.User{
-	{Email: "yan@stele.local", Name: "Yan", Role: "ops_generalist"},
+	{Email: "yan@stele.local", Name: "Yan", Role: "admin"},
 	{Email: "mario.bms@stele.local", Name: "Mario Bossi", Role: "battery_specialist",
 		Specializations: []string{"BMS_", "CHARGER_"}},
 	{Email: "ana.motor@stele.local", Name: "Ana Motor", Role: "motor_specialist",
@@ -279,9 +284,25 @@ func main() {
 }
 
 func seedMaster(ctx context.Context, ur *user.Repo, dr *dealer.Repo, res *fault.PgResolver) error {
+	devHash, err := auth.HashPassword(DevPassword)
+	if err != nil {
+		return fmt.Errorf("hash dev password: %w", err)
+	}
+	slog.Warn("seeded dev password",
+		"password", DevPassword,
+		"hint", "all seeded users share this password; change after first login")
 	for _, u := range seedUsers {
 		if err := ur.Upsert(ctx, u); err != nil {
 			return fmt.Errorf("user %s: %w", u.Email, err)
+		}
+		// Upsert preserves an existing password_hash if u.PasswordHash is empty.
+		// Force the dev password on every seed (idempotent).
+		full, err := ur.ByEmail(ctx, u.Email)
+		if err != nil {
+			return fmt.Errorf("resolve %s after upsert: %w", u.Email, err)
+		}
+		if err := ur.SetPassword(ctx, full.ID, devHash); err != nil {
+			return fmt.Errorf("set dev password for %s: %w", u.Email, err)
 		}
 	}
 	for _, d := range seedDealers {

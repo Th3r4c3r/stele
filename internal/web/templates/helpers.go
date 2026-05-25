@@ -57,3 +57,27 @@ func derefStr(s *string) string {
 	}
 	return *s
 }
+
+// joinComma joins a slice with ", " or returns "—" when empty.
+func joinComma(xs []string) string {
+	if len(xs) == 0 {
+		return "—"
+	}
+	out := ""
+	for i, x := range xs {
+		if i > 0 {
+			out += ", "
+		}
+		out += x
+	}
+	return out
+}
+
+// userFormAction returns the POST target for the admin user form.
+// Empty id = create; a UUID = update.
+func userFormAction(id string) string {
+	if id == "" {
+		return "/admin/users"
+	}
+	return "/admin/users/" + id
+}

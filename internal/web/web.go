@@ -19,28 +19,71 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Th3r4c3r/stele/internal/auth"
+	"github.com/Th3r4c3r/stele/internal/dealer"
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/fault"
+	"github.com/Th3r4c3r/stele/internal/mail"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
 	"github.com/Th3r4c3r/stele/internal/web/static"
 	"github.com/Th3r4c3r/stele/internal/web/templates"
 )
 
-// Mount registers the fault-case UI on the provided ServeMux. mw wraps
-// every dynamic route with the current-user injector; static files
-// bypass it (no per-request user context needed for assets).
-func Mount(
-	mux *http.ServeMux,
-	pool *pgxpool.Pool,
-	store *event.PostgresStore,
-	resolver fault.Resolver,
-	users *userpkg.Repo,
-	mw *CurrentUserMiddleware,
-) {
-	h := &handlers{pool: pool, store: store, resolver: resolver, users: users}
+// Deps is the set of dependencies the web package needs.
+type Deps struct {
+	Pool       *pgxpool.Pool
+	Store      *event.PostgresStore
+	Resolver   *fault.PgResolver
+	Users      *userpkg.Repo
+	Dealers    *dealer.Repo
+	Sessions   *auth.Sessions
+	Resets     *auth.ResetTokens
+	RateLimit  *auth.LoginRateLimit
+	MailSender mail.Sender
+	BaseURL    string
+}
 
-	wrap := func(fn http.HandlerFunc) http.Handler { return mw.Wrap(fn) }
+// Mount registers all routes. The handler tree is built like an onion:
+// AuthMiddleware wraps the whole tree and bypasses itself on public
+// paths (login/forgot/reset/healthz/static); AdminOnly wraps the
+// /admin subtree.
+func Mount(mux *http.ServeMux, d Deps) {
+	h := &handlers{pool: d.Pool, store: d.Store, resolver: d.Resolver, users: d.Users}
+	ah := &authHandlers{
+		users:      d.Users,
+		sessions:   d.Sessions,
+		resets:     d.Resets,
+		rateLimit:  d.RateLimit,
+		mailSender: d.MailSender,
+		baseURL:    d.BaseURL,
+	}
+	adm := &adminHandlers{
+		pool:       d.Pool,
+		users:      d.Users,
+		dealers:    d.Dealers,
+		resolver:   d.Resolver,
+		sessions:   d.Sessions,
+		resets:     d.Resets,
+		mailSender: d.MailSender,
+		baseURL:    d.BaseURL,
+	}
 
+	authMW := NewAuthMiddleware(d.Sessions, d.Users)
+	wrap := func(fn http.HandlerFunc) http.Handler { return authMW.Wrap(fn) }
+	wrapAdmin := func(fn http.HandlerFunc) http.Handler {
+		return authMW.Wrap(AdminOnly(d.Users, http.HandlerFunc(fn)))
+	}
+
+	// Public (auth middleware skips publicPath)
+	mux.Handle("GET /login", wrap(ah.loginGET))
+	mux.Handle("POST /login", wrap(ah.loginPOST))
+	mux.Handle("POST /logout", wrap(ah.logoutPOST))
+	mux.Handle("GET /forgot", wrap(ah.forgotGET))
+	mux.Handle("POST /forgot", wrap(ah.forgotPOST))
+	mux.Handle("GET /reset", wrap(ah.resetGET))
+	mux.Handle("POST /reset", wrap(ah.resetPOST))
+
+	// Authenticated
 	mux.Handle("GET /", wrap(h.rootRedirect))
 	mux.Handle("GET /claims", wrap(h.legacyClaimsRedirect))
 	mux.Handle("GET /cases", wrap(h.listCases))
@@ -51,6 +94,20 @@ func Mount(
 	mux.Handle("POST /cases/{id}/classify", wrap(h.classifyCase))
 	mux.Handle("POST /cases/{id}/close", wrap(h.closeCase))
 	mux.Handle("POST /cases/{id}/transfer", wrap(h.transferCase))
+
+	// Admin
+	mux.Handle("GET /admin", wrapAdmin(adm.overview))
+	mux.Handle("GET /admin/users", wrapAdmin(adm.usersList))
+	mux.Handle("POST /admin/users", wrapAdmin(adm.usersCreate))
+	mux.Handle("GET /admin/users/{id}", wrapAdmin(adm.userEdit))
+	mux.Handle("POST /admin/users/{id}", wrapAdmin(adm.userUpdate))
+	mux.Handle("POST /admin/users/{id}/reset", wrapAdmin(adm.userResetEmail))
+	mux.Handle("POST /admin/users/{id}/deactivate", wrapAdmin(adm.userDeactivate))
+	mux.Handle("POST /admin/users/{id}/reactivate", wrapAdmin(adm.userReactivate))
+	mux.Handle("GET /admin/rules", wrapAdmin(adm.rulesList))
+	mux.Handle("POST /admin/rules", wrapAdmin(adm.rulesCreate))
+	mux.Handle("GET /admin/dealers", wrapAdmin(adm.dealersList))
+	mux.Handle("POST /admin/dealers", wrapAdmin(adm.dealersCreate))
 
 	staticFS, err := fs.Sub(static.FS, ".")
 	if err != nil {

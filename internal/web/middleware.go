@@ -1,50 +1,89 @@
 package web
 
 import (
-	"context"
-	"log/slog"
 	"net/http"
-	"os"
+	"strings"
 
-	"github.com/google/uuid"
-
+	"github.com/Th3r4c3r/stele/internal/auth"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
 )
 
-// CurrentUserMiddleware resolves STELE_DEFAULT_USER_EMAIL into a
-// user_id at boot and injects it into every request context. When
-// real auth lands, swap the resolution source from env to a session
-// cookie; handlers do not change.
+// AuthMiddleware verifies the session cookie and injects user_id into
+// ctx. Unauthenticated GETs are 302'd to /login?return=<url>; other
+// methods get 401 (HTMX-friendly).
 //
-// If the env points to no user, the constructor returns an error so
-// the app refuses to start (configuration error, not silent fallback).
-type CurrentUserMiddleware struct {
-	userID uuid.UUID
+// Public routes are matched by prefix and skip the check.
+type AuthMiddleware struct {
+	sessions *auth.Sessions
+	users    *userpkg.Repo
 }
 
-func NewCurrentUserMiddleware(ctx context.Context, repo *userpkg.Repo) (*CurrentUserMiddleware, error) {
-	email := os.Getenv("STELE_DEFAULT_USER_EMAIL")
-	if email == "" {
-		email = "yan@stele.local"
-	}
-	u, err := repo.ByEmail(ctx, email)
-	if err != nil {
-		return nil, err
-	}
-	slog.Info("current-user middleware resolved", "email", u.Email, "id", u.ID)
-	return &CurrentUserMiddleware{userID: u.ID}, nil
+func NewAuthMiddleware(sessions *auth.Sessions, users *userpkg.Repo) *AuthMiddleware {
+	return &AuthMiddleware{sessions: sessions, users: users}
 }
 
-// Wrap is the standard http middleware.
-func (m *CurrentUserMiddleware) Wrap(next http.Handler) http.Handler {
+// publicPath returns true for routes that do NOT require auth.
+func publicPath(p string) bool {
+	switch {
+	case p == "/login", p == "/logout", p == "/forgot", p == "/reset":
+		return true
+	case p == "/healthz":
+		return true
+	case strings.HasPrefix(p, "/static/"):
+		return true
+	}
+	return false
+}
+
+func (m *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := userpkg.WithID(r.Context(), m.userID)
+		if publicPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		cookie, err := r.Cookie(auth.CookieName)
+		if err != nil {
+			m.deny(w, r)
+			return
+		}
+		sess, err := m.sessions.Resolve(r.Context(), cookie.Value)
+		if err != nil {
+			m.deny(w, r)
+			return
+		}
+		u, err := m.users.ByID(r.Context(), sess.UserID)
+		if err != nil || !u.IsActive() {
+			_ = m.sessions.Invalidate(r.Context(), sess.ID)
+			m.deny(w, r)
+			return
+		}
+		ctx := userpkg.WithID(r.Context(), u.ID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// UserID returns the resolved user id (for code that runs outside an
-// HTTP request, e.g., a CLI sub-command). At M3 it equals the env-resolved
-// user; at M5+ this helper becomes irrelevant once handlers always go
-// through context.
-func (m *CurrentUserMiddleware) UserID() uuid.UUID { return m.userID }
+func (m *AuthMiddleware) deny(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		http.Redirect(w, r, "/login?return="+r.URL.Path, http.StatusFound)
+		return
+	}
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+}
+
+// AdminOnly wraps a handler so it returns 403 unless the current user
+// has role "admin".
+func AdminOnly(users *userpkg.Repo, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := userpkg.FromCtx(r.Context())
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		u, err := users.ByID(r.Context(), id)
+		if err != nil || !u.IsAdmin() {
+			http.Error(w, "admin only", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
