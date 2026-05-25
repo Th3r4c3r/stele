@@ -84,10 +84,14 @@ runs on the Hetzner instance at a URL Yan can open.
 - Projection joins: "claims by dealer", "claims for VIN".
 - Synthetic dataset extended.
 
-## M6 — Time-travel
-- API: state as of `(occurred_at, recorded_at)`.
-- UI: dual date pickers.
-- Bug-bash: corrections (backdated events) must reproject correctly.
+## M6 — Global search
+
+## (deferred indefinitely) — Time-travel
+Bi-temporal state-as-of API + UI. Deferred until a concrete consumer
+(audit, legal hold, backdated-edit workflow) emerges. Every event
+already carries occurred_at + recorded_at, so adopting it later is
+non-breaking.
+
 
 ## M7 — Schema-as-git
 - Schema changes (new event type, new field) modeled as commits.

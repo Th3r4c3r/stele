@@ -1,0 +1,168 @@
+package templates
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// SearchResultsPage shows the three grouped sections.
+templ SearchResultsPage(nav NavUser, term string, cases []SearchCaseHit, notes []SearchNoteHit, docs []SearchDocHit) {
+	@Layout("Search · "+term, nav) {
+		<section class="page-head">
+			<h1>Search</h1>
+			<form method="GET" action="/search" class="form inline">
+				<input type="search" name="q" value={ term } minlength="2" maxlength="200" autofocus/>
+				<button type="submit" class="btn">Search</button>
+			</form>
+		</section>
+		if term == "" {
+			<p class="muted">Type at least 2 characters.</p>
+		} else if len(cases) == 0 && len(notes) == 0 && len(docs) == 0 {
+			<p class="muted">No matches for <code>{ term }</code>.</p>
+		} else {
+			<section>
+				<h2>Cases ({ fmt.Sprint(len(cases)) })</h2>
+				if len(cases) == 0 {
+					<p class="muted">no case matches</p>
+				} else {
+					@searchCasesTable(cases, term)
+				}
+			</section>
+			<section>
+				<h2>Notes ({ fmt.Sprint(len(notes)) })</h2>
+				if len(notes) == 0 {
+					<p class="muted">no note matches</p>
+				} else {
+					@searchNotesList(notes, term)
+				}
+			</section>
+			<section>
+				<h2>Documents ({ fmt.Sprint(len(docs)) })</h2>
+				if len(docs) == 0 {
+					<p class="muted">no document matches</p>
+				} else {
+					@searchDocsTable(docs, term)
+				}
+			</section>
+		}
+	}
+}
+
+// SearchCaseHit / SearchNoteHit / SearchDocHit are templ-side mirrors
+// of the search package types (kept here so the templates don't
+// import the search package and create a cycle through web).
+type SearchCaseHit struct {
+	CaseID    uuid.UUID
+	Status    string
+	Dealer    string
+	VIN       string
+	FaultCode string
+	Field     string
+	Snippet   string
+}
+
+type SearchNoteHit struct {
+	CaseID     uuid.UUID
+	OccurredAt time.Time
+	Author     string
+	Snippet    string
+}
+
+type SearchDocHit struct {
+	DocumentID uuid.UUID
+	CaseID     uuid.UUID
+	Filename   string
+	ContentType string
+	AttachedAt time.Time
+}
+
+templ searchCasesTable(rows []SearchCaseHit, term string) {
+	<table class="claims">
+		<thead>
+			<tr>
+				<th>Status</th>
+				<th>Dealer</th>
+				<th>VIN</th>
+				<th>Fault</th>
+				<th>Match</th>
+				<th></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, r := range rows {
+				<tr>
+					<td>
+						switch r.Status {
+							case "triage":
+								<span class="badge status-triage">triage</span>
+							case "classified":
+								<span class="badge status-classified">classified</span>
+							case "closed":
+								<span class="badge status-closed">closed</span>
+						}
+					</td>
+					<td>@highlightSpan(r.Dealer, term)</td>
+					<td><code>@highlightSpan(r.VIN, term)</code></td>
+					<td>@highlightSpan(r.FaultCode, term)</td>
+					<td>
+						<small class="muted">{ r.Field }:</small>
+						@highlightSpan(r.Snippet, term)
+					</td>
+					<td><a href={ templ.URL("/cases/" + r.CaseID.String()) }>Open</a></td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ searchNotesList(rows []SearchNoteHit, term string) {
+	<ol class="timeline">
+		for _, r := range rows {
+			<li>
+				<time>{ r.OccurredAt.Format("2006-01-02 15:04") }</time>
+				<strong>{ r.Author }</strong>
+				<p>@highlightSpan(r.Snippet, term)</p>
+				<small><a href={ templ.URL("/cases/" + r.CaseID.String()) }>Open case { r.CaseID.String()[:8] }</a></small>
+			</li>
+		}
+	</ol>
+}
+
+templ searchDocsTable(rows []SearchDocHit, term string) {
+	<table class="claims documents">
+		<thead>
+			<tr>
+				<th>Filename</th>
+				<th>Type</th>
+				<th>Uploaded</th>
+				<th></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, r := range rows {
+				<tr>
+					<td><strong>@highlightSpan(r.Filename, term)</strong></td>
+					<td><code>{ r.ContentType }</code></td>
+					<td>{ r.AttachedAt.Format("2006-01-02 15:04") }</td>
+					<td>
+						<a href={ templ.URL("/documents/" + r.DocumentID.String() + "/raw") }>Download</a>
+						<span class="muted"> &middot; </span>
+						<a href={ templ.URL("/cases/" + r.CaseID.String()) }>Open case</a>
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+// highlightSpan wraps each occurrence of term (case-insensitive) in
+// <mark>. Done as a tiny component so the call sites stay readable.
+templ highlightSpan(text, term string) {
+	if term == "" {
+		{ text }
+	} else {
+		@templ.Raw(highlightHTML(text, term))
+	}
+}

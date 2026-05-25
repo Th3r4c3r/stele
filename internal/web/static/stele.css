@@ -61,6 +61,29 @@ main {
 }
 .topbar nav.primary a:hover { color: var(--fg); background: #f0f0f0; }
 
+.search-bar {
+	display: flex;
+	flex: 0 1 360px;
+	margin: 0;
+	padding: 0;
+}
+.search-bar input {
+	width: 100%;
+	font: inherit;
+	font-size: 14px;
+	padding: 6px 10px;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: #fff;
+	color: var(--fg);
+}
+.search-bar input:focus {
+	outline: 2px solid var(--accent);
+	outline-offset: -1px;
+}
+
+mark { background: #fff3a8; padding: 0 2px; border-radius: 2px; }
+
 .user-menu {
 	display: flex;
 	align-items: center;

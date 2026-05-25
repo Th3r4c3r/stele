@@ -25,6 +25,7 @@ import (
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/mail"
+	"github.com/Th3r4c3r/stele/internal/search"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
 	"github.com/Th3r4c3r/stele/internal/web/static"
 	"github.com/Th3r4c3r/stele/internal/web/templates"
@@ -50,7 +51,8 @@ type Deps struct {
 // paths (login/forgot/reset/healthz/static); AdminOnly wraps the
 // /admin subtree.
 func Mount(mux *http.ServeMux, d Deps) {
-	h := &handlers{pool: d.Pool, store: d.Store, resolver: d.Resolver, users: d.Users}
+	h := &handlers{pool: d.Pool, store: d.Store, resolver: d.Resolver, users: d.Users,
+		searchSvc: search.New(d.Pool)}
 	ah := &authHandlers{
 		users:      d.Users,
 		sessions:   d.Sessions,
@@ -101,6 +103,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /cases/{id}/documents", wrap(docs.uploadDocument))
 	mux.Handle("GET /documents/{id}/raw", wrap(docs.downloadDocument))
 	mux.Handle("POST /documents/{id}/delete", wrap(docs.deleteDocument))
+	mux.Handle("GET /search", wrap(h.searchPage))
 
 	// Per-user self-service
 	mux.Handle("GET /account", wrap(acc.page))
@@ -128,10 +131,11 @@ func Mount(mux *http.ServeMux, d Deps) {
 }
 
 type handlers struct {
-	pool     *pgxpool.Pool
-	store    *event.PostgresStore
-	resolver fault.Resolver
-	users    *userpkg.Repo
+	pool      *pgxpool.Pool
+	store     *event.PostgresStore
+	resolver  fault.Resolver
+	users     *userpkg.Repo
+	searchSvc *search.Service
 }
 
 func (h *handlers) rootRedirect(w http.ResponseWriter, r *http.Request) {

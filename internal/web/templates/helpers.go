@@ -1,6 +1,8 @@
 package templates
 
 import (
+	"strings"
+
 	"github.com/Th3r4c3r/stele/internal/fault"
 )
 
@@ -80,4 +82,42 @@ func userFormAction(id string) string {
 		return "/admin/users"
 	}
 	return "/admin/users/" + id
+}
+
+// highlightHTML wraps every case-insensitive occurrence of term in
+// text inside a <mark>...</mark> span. Both sides are HTML-escaped to
+// prevent injection; the <mark> tags themselves are added afterwards.
+func highlightHTML(text, term string) string {
+	if text == "" || term == "" {
+		return htmlEscape(text)
+	}
+	low := strings.ToLower(text)
+	lowTerm := strings.ToLower(term)
+	var b strings.Builder
+	i := 0
+	for {
+		j := strings.Index(low[i:], lowTerm)
+		if j < 0 {
+			b.WriteString(htmlEscape(text[i:]))
+			break
+		}
+		b.WriteString(htmlEscape(text[i : i+j]))
+		b.WriteString("<mark>")
+		b.WriteString(htmlEscape(text[i+j : i+j+len(term)]))
+		b.WriteString("</mark>")
+		i = i + j + len(term)
+	}
+	return b.String()
+}
+
+func htmlEscape(s string) string {
+	// Tiny inlined escaper. Avoids importing html/template just for one helper.
+	repl := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		"\"", "&quot;",
+		"'", "&#39;",
+	)
+	return repl.Replace(s)
 }
