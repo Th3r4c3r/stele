@@ -15,6 +15,11 @@ services:
         VERSION: ${STELE_VERSION:-dev}
     container_name: stele-app
     restart: unless-stopped
+    # Run as the host's yan user (UID 1000) so bind-mounted volumes
+    # (notably /data/documents) are writable without chown ceremony.
+    # The distroless image is happy with any numeric UID; we override
+    # the default 'nonroot' (65532) here.
+    user: "1000:1000"
     environment:
       STELE_ADDR: ":8080"
       STELE_VERSION: ${STELE_VERSION:-dev}
