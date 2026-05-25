@@ -11,13 +11,16 @@ runs on the Hetzner instance at a URL Yan can open.
 - **Exit criteria:** Yan opens the URL and sees "Stele M0 alive". ✅
 - Live: https://stele.178-105-44-164.nip.io
 
-## M1 — Event store + projection engine (IN PROGRESS)
-- `events` table: id, aggregate_type, aggregate_id, type, payload jsonb, occurred_at, recorded_at, recorded_by. ✅
-- Append-only API enforced by DB trigger. ✅
+## M1 — Event store + projection engine (DONE 2026-05-25)
+- `events` table with bi-temporal columns + DB-level append-only trigger. ✅
 - Store interface (Append/Load/Stream) with keyset-paginated streaming. ✅
 - Migrations embedded + autorun on boot. ✅
-- Integration tests over synthetic event streams. ✅
-- **Pending:** Projection framework (register handler, materialize into table, replay command). Next session.
+- Projection framework: Projector type, Runner with one goroutine per
+  projector, polling, atomic Apply + cursor advance per event. ✅
+- `stele replay <name>` / `replay --all` sub-command. ✅
+- Example projector (event_count_by_type), idempotent on replay. ✅
+- Integration tests over synthetic streams, replay idempotency, cursor advance. ✅
+- Endpoints live: `/debug/projections`, plus existing `/debug/event[s]`.
 
 ## M2 — Warranty domain
 - Aggregate: `Claim`. Events: `ClaimOpened`, `ClaimUpdated`, `ClaimClosed`, `NoteAdded`.
