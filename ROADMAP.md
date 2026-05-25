@@ -67,11 +67,16 @@ runs on the Hetzner instance at a URL Yan can open.
 - Seeder sets dev password 'stele-dev-2026' (Yan=admin, others=ops). ✅
 - Filtro Assignee bonus su Triage/Classified/Closed tabs. ✅
 
-## M5 — Documents (storage only)
-- Attach PDF to a case via event. Filesystem under `/data/documents/`,
-  sha256 in event, no bytea in DB.
-- UI: documents alongside the event timeline; download link; no extraction.
-- Text extraction deferred indefinitely (no concrete consumer yet).
+## M5 — Documents (storage only) (DONE 2026-05-25)
+- Attach files to a case via event. Filesystem under
+  `/data/documents/<id>`, sha256 + metadata in event, no bytea. ✅
+- 25 MiB hard cap (configurable via STELE_DOCS_MAX_BYTES). ✅
+- UI: collapsible upload form + documents table in case detail. ✅
+- Streaming download with Content-Disposition: attachment. ✅
+- Timeline summary: "<user> uploaded <file> (<type>, <size>)". ✅
+- Backup tarball ~/data/documents alongside pg_dump, 7-day rotation. ✅
+- Idempotent projection (ON CONFLICT DO NOTHING). ✅
+- Text extraction deferred indefinitely.
 
 ## M4 — Relations
 - Vehicles (VIN), Parts (SKU), Dealers (code).
