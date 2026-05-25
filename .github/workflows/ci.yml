@@ -13,6 +13,25 @@ jobs:
   go:
     name: lint + test + build
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stele
+          POSTGRES_PASSWORD: stele
+          POSTGRES_DB: stele_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stele -d stele_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      STELE_TEST_DATABASE_URL: postgres://stele:stele@localhost:5432/stele_test?sslmode=disable
+
     steps:
       - uses: actions/checkout@v4
 
@@ -20,6 +39,9 @@ jobs:
         with:
           go-version: "1.23"
           cache: true
+
+      - name: go mod download
+        run: go mod download
 
       - name: go vet
         run: go vet ./...
@@ -34,6 +56,8 @@ jobs:
           fi
 
       - name: go test
+        env:
+          CGO_ENABLED: "1"
         run: go test -race -count=1 ./...
 
       - name: go build
