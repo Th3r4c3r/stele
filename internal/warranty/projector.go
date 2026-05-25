@@ -42,6 +42,12 @@ func applyClaimOpened(ctx context.Context, tx pgx.Tx, ev event.Event) error {
 	if err != nil {
 		return err
 	}
+	// Skip malformed payloads (e.g., legacy smoke events without the
+	// typed shape). Required fields enforced by the OpenClaim command;
+	// if any are missing here the event predates the command layer.
+	if v.Dealer == "" || v.VIN == "" || v.FaultCode == "" {
+		return nil
+	}
 	// INSERT, but be replay-safe: if the row already exists with a newer
 	// or equal last_event_id, skip.
 	const q = `
