@@ -1,0 +1,34 @@
+# Binaries
+/stele
+/cmd/stele/stele
+*.exe
+
+# Build artifacts
+/dist
+/bin
+
+# Dependencies
+/vendor
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Secrets
+.env
+.env.local
+deploy/secrets/
+
+# Database dumps
+*.db
+*.sqlite
+*.dump
+
+# Coverage
+coverage.out
+coverage.html
+
+# OS
+.DS_Store
+Thumbs.db
