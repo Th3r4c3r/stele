@@ -84,7 +84,14 @@ runs on the Hetzner instance at a URL Yan can open.
 - Projection joins: "claims by dealer", "claims for VIN".
 - Synthetic dataset extended.
 
-## M6 — Global search
+## M6 — Global search (DONE 2026-05-25)
+- Topbar search input (every authenticated page). ✅
+- /search?q=... grouped results: Cases / Notes / Documents. ✅
+- ILIKE on dealer, vin, fault_code, description, note text, doc filename. ✅
+- Snippet with case-insensitive `<mark>` highlight, HTML-escaped. ✅
+- Live: smoke matched 11 cases for BMS_FAULT_03, 50 notes for "reflashed",
+  17 dealer matches, 1 document. Empty result handled, min 2 chars enforced.
+- Trigram/GIN indexes deferred until volume warrants.
 
 ## (deferred indefinitely) — Time-travel
 Bi-temporal state-as-of API + UI. Deferred until a concrete consumer
