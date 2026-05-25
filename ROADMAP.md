@@ -3,12 +3,13 @@
 Each milestone is a deployed, demoable increment. No milestone is "done" until it
 runs on the Hetzner instance at a URL Yan can open.
 
-## M0 — Skeleton
+## M0 — Skeleton (DONE 2026-05-25)
 - Go module, `cmd/stele` serving a static "hello" page.
 - docker-compose with Postgres 16 + app.
 - CI: lint, test, build (GitHub Actions).
 - Deployed to Hetzner at a chosen subdomain via Caddy.
-- **Exit criteria:** Yan opens the URL and sees "Stele M0 alive".
+- **Exit criteria:** Yan opens the URL and sees "Stele M0 alive". ✅
+- Live: https://stele.178-105-44-164.nip.io
 
 ## M1 — Event store + projection engine
 - `events` table: id, aggregate_id, type, payload jsonb, occurred_at, recorded_at, recorded_by.
