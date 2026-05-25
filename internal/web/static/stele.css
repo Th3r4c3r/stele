@@ -48,12 +48,44 @@ main {
 	text-decoration: none;
 	font-size: 18px;
 }
-.topbar nav a {
+.topbar nav.primary {
+	display: flex;
+	gap: 4px;
+	flex: 1;
+}
+.topbar nav.primary a {
 	color: var(--fg-muted);
 	text-decoration: none;
-	margin-right: 16px;
+	padding: 4px 10px;
+	border-radius: 4px;
 }
-.topbar nav a:hover { color: var(--fg); }
+.topbar nav.primary a:hover { color: var(--fg); background: #f0f0f0; }
+
+.user-menu {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+.user-menu .user-link {
+	color: var(--fg);
+	text-decoration: none;
+	font-size: 14px;
+	padding: 4px 8px;
+	border-radius: 4px;
+}
+.user-menu .user-link:hover { background: #f0f0f0; }
+.user-menu .inline-logout { margin: 0; padding: 0; background: none; border: 0; }
+.link-button {
+	background: none;
+	border: 0;
+	padding: 4px 8px;
+	color: var(--fg-muted);
+	cursor: pointer;
+	font: inherit;
+	font-size: 14px;
+	border-radius: 4px;
+}
+.link-button:hover { color: var(--fg); background: #f0f0f0; }
 
 .footer {
 	text-align: center;

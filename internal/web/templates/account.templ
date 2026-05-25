@@ -1,0 +1,56 @@
+package templates
+
+// AccountPage shows the signed-in user's profile and a change-password
+// form. Mounted at /account.
+templ AccountPage(nav NavUser, data AccountFormData) {
+	@Layout("My account", nav) {
+		<section class="page-head">
+			<h1>My account</h1>
+		</section>
+		<dl class="summary">
+			<dt>Name</dt><dd>{ nav.Name }</dd>
+			<dt>Email</dt><dd><code>{ nav.Email }</code></dd>
+			<dt>Role</dt>
+			<dd>
+				if nav.IsAdmin {
+					<span class="badge status-classified">admin</span>
+				} else {
+					<span class="badge status-triage">ops</span>
+				}
+			</dd>
+		</dl>
+		<section>
+			<h2>Change password</h2>
+			@ChangePasswordForm(data)
+		</section>
+	}
+}
+
+type AccountFormData struct {
+	ErrorMsg   string
+	SuccessMsg string
+}
+
+templ ChangePasswordForm(data AccountFormData) {
+	<form method="POST" action="/account/password" class="form">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		if data.SuccessMsg != "" {
+			<p class="muted">{ data.SuccessMsg }</p>
+		}
+		<label>
+			Current password
+			<input name="current_password" type="password" required autocomplete="current-password"/>
+		</label>
+		<label>
+			New password (min 10 chars)
+			<input name="new_password" type="password" required minlength="10" autocomplete="new-password"/>
+		</label>
+		<label>
+			Confirm new password
+			<input name="new_password2" type="password" required minlength="10" autocomplete="new-password"/>
+		</label>
+		<button type="submit" class="btn primary">Update password</button>
+	</form>
+}

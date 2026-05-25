@@ -50,7 +50,7 @@ type AdminRule struct {
 }
 
 // AdminOverview is the /admin landing.
-func AdminOverview(activeUsers, deactivatedUsers, dealers, rules, sessions int) templ.Component {
+func AdminOverview(nav NavUser, activeUsers, deactivatedUsers, dealers, rules, sessions int) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -154,7 +154,7 @@ func AdminOverview(activeUsers, deactivatedUsers, dealers, rules, sessions int) 
 			}
 			return templ_7745c5c3_Err
 		})
-		templ_7745c5c3_Err = AdminShell("Admin").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = AdminShell("Admin", nav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -163,7 +163,7 @@ func AdminOverview(activeUsers, deactivatedUsers, dealers, rules, sessions int) 
 }
 
 // AdminUsersPage lists users + a create form.
-func AdminUsersPage(users []AdminUser, form AdminUserFormData) templ.Component {
+func AdminUsersPage(nav NavUser, users []AdminUser, form AdminUserFormData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -331,7 +331,7 @@ func AdminUsersPage(users []AdminUser, form AdminUserFormData) templ.Component {
 			}
 			return templ_7745c5c3_Err
 		})
-		templ_7745c5c3_Err = AdminShell("Admin · users").Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = AdminShell("Admin · users", nav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var9), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -608,7 +608,7 @@ func roleOption(value string, current string) templ.Component {
 	})
 }
 
-func AdminUserEditPage(u AdminUser, form AdminUserFormData) templ.Component {
+func AdminUserEditPage(nav NavUser, u AdminUser, form AdminUserFormData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -697,7 +697,7 @@ func AdminUserEditPage(u AdminUser, form AdminUserFormData) templ.Component {
 			}
 			return templ_7745c5c3_Err
 		})
-		templ_7745c5c3_Err = AdminShell("Admin · user "+u.Email).Render(templ.WithChildren(ctx, templ_7745c5c3_Var30), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = AdminShell("Admin · user "+u.Email, nav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var30), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -706,7 +706,7 @@ func AdminUserEditPage(u AdminUser, form AdminUserFormData) templ.Component {
 }
 
 // AdminRulesPage list + create form.
-func AdminRulesPage(rules []AdminRule, assignees []UserOption, form AdminRuleFormData) templ.Component {
+func AdminRulesPage(nav NavUser, rules []AdminRule, assignees []UserOption, form AdminRuleFormData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -865,7 +865,7 @@ func AdminRulesPage(rules []AdminRule, assignees []UserOption, form AdminRuleFor
 			}
 			return templ_7745c5c3_Err
 		})
-		templ_7745c5c3_Err = AdminShell("Admin · rules").Render(templ.WithChildren(ctx, templ_7745c5c3_Var35), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = AdminShell("Admin · rules", nav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var35), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1055,7 +1055,7 @@ func AdminRuleForm(assignees []UserOption, data AdminRuleFormData) templ.Compone
 	})
 }
 
-func AdminDealersPage(dealers []AdminDealer, form AdminDealerFormData) templ.Component {
+func AdminDealersPage(nav NavUser, dealers []AdminDealer, form AdminDealerFormData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1164,7 +1164,7 @@ func AdminDealersPage(dealers []AdminDealer, form AdminDealerFormData) templ.Com
 			}
 			return templ_7745c5c3_Err
 		})
-		templ_7745c5c3_Err = AdminShell("Admin · dealers").Render(templ.WithChildren(ctx, templ_7745c5c3_Var52), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = AdminShell("Admin · dealers", nav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var52), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1286,7 +1286,7 @@ func AdminDealerForm(data AdminDealerFormData) templ.Component {
 
 // AdminShell wraps an admin page with the standard chrome but adds a
 // secondary nav row pointing to the three management pages.
-func AdminShell(title string) templ.Component {
+func AdminShell(title string, nav NavUser) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1329,7 +1329,7 @@ func AdminShell(title string) templ.Component {
 			}
 			return templ_7745c5c3_Err
 		})
-		templ_7745c5c3_Err = Layout(title).Render(templ.WithChildren(ctx, templ_7745c5c3_Var64), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout(title, nav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var64), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

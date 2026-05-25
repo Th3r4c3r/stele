@@ -42,8 +42,8 @@ type AdminRule struct {
 }
 
 // AdminOverview is the /admin landing.
-templ AdminOverview(activeUsers, deactivatedUsers, dealers, rules, sessions int) {
-	@AdminShell("Admin") {
+templ AdminOverview(nav NavUser, activeUsers, deactivatedUsers, dealers, rules, sessions int) {
+	@AdminShell("Admin", nav) {
 		<section class="page-head"><h1>Admin</h1></section>
 		<ul class="overview">
 			<li><strong>{ fmt.Sprint(activeUsers) }</strong> active users <span class="muted">/ { fmt.Sprint(deactivatedUsers) } deactivated</span> — <a href="/admin/users">manage</a></li>
@@ -55,8 +55,8 @@ templ AdminOverview(activeUsers, deactivatedUsers, dealers, rules, sessions int)
 }
 
 // AdminUsersPage lists users + a create form.
-templ AdminUsersPage(users []AdminUser, form AdminUserFormData) {
-	@AdminShell("Admin · users") {
+templ AdminUsersPage(nav NavUser, users []AdminUser, form AdminUserFormData) {
+	@AdminShell("Admin · users", nav) {
 		<section class="page-head">
 			<h1>Users</h1>
 			<a href="/admin" class="btn">Back</a>
@@ -181,8 +181,8 @@ templ roleOption(value string, current string) {
 	}
 }
 
-templ AdminUserEditPage(u AdminUser, form AdminUserFormData) {
-	@AdminShell("Admin · user " + u.Email) {
+templ AdminUserEditPage(nav NavUser, u AdminUser, form AdminUserFormData) {
+	@AdminShell("Admin · user "+u.Email, nav) {
 		<section class="page-head">
 			<h1>Edit user</h1>
 			<a href="/admin/users" class="btn">Back</a>
@@ -207,8 +207,8 @@ templ AdminUserEditPage(u AdminUser, form AdminUserFormData) {
 }
 
 // AdminRulesPage list + create form.
-templ AdminRulesPage(rules []AdminRule, assignees []UserOption, form AdminRuleFormData) {
-	@AdminShell("Admin · rules") {
+templ AdminRulesPage(nav NavUser, rules []AdminRule, assignees []UserOption, form AdminRuleFormData) {
+	@AdminShell("Admin · rules", nav) {
 		<section class="page-head">
 			<h1>Assignment rules</h1>
 			<a href="/admin" class="btn">Back</a>
@@ -309,8 +309,8 @@ templ AdminRuleForm(assignees []UserOption, data AdminRuleFormData) {
 	</form>
 }
 
-templ AdminDealersPage(dealers []AdminDealer, form AdminDealerFormData) {
-	@AdminShell("Admin · dealers") {
+templ AdminDealersPage(nav NavUser, dealers []AdminDealer, form AdminDealerFormData) {
+	@AdminShell("Admin · dealers", nav) {
 		<section class="page-head">
 			<h1>Dealers</h1>
 			<a href="/admin" class="btn">Back</a>
@@ -372,8 +372,8 @@ templ AdminDealerForm(data AdminDealerFormData) {
 
 // AdminShell wraps an admin page with the standard chrome but adds a
 // secondary nav row pointing to the three management pages.
-templ AdminShell(title string) {
-	@Layout(title) {
+templ AdminShell(title string, nav NavUser) {
+	@Layout(title, nav) {
 		<nav class="admin-nav">
 			<a href="/admin">Overview</a>
 			<a href="/admin/users">Users</a>

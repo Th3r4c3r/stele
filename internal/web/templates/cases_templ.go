@@ -51,6 +51,7 @@ type TimelineEntry struct {
 // CasesListPage renders the index with four tabs, kind filter (on
 // classified+closed) and assignee filter (on every status tab).
 func CasesListPage(
+	nav NavUser,
 	triage []CaseRow,
 	classified []CaseRow,
 	closed []CaseRow,
@@ -59,7 +60,6 @@ func CasesListPage(
 	kindFilter string,
 	assigneeFilter string,
 	users []UserOption,
-	currentUserName string,
 ) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -93,13 +93,13 @@ func CasesListPage(
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = CasesListBody(triage, classified, closed, mine, activeTab, kindFilter, assigneeFilter, users, currentUserName).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = CasesListBody(triage, classified, closed, mine, activeTab, kindFilter, assigneeFilter, users, nav.Name).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return templ_7745c5c3_Err
 		})
-		templ_7745c5c3_Err = Layout("Cases").Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout("Cases", nav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -888,7 +888,7 @@ func kindBadge(kind string) templ.Component {
 }
 
 // NewCasePage shows the empty form.
-func NewCasePage() templ.Component {
+func NewCasePage(nav NavUser) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -931,7 +931,7 @@ func NewCasePage() templ.Component {
 			}
 			return templ_7745c5c3_Err
 		})
-		templ_7745c5c3_Err = Layout("New case").Render(templ.WithChildren(ctx, templ_7745c5c3_Var35), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout("New case", nav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var35), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1052,7 +1052,7 @@ func NewCaseForm(data NewCaseFormData) templ.Component {
 }
 
 // CaseDetailPage renders a single case with its event timeline.
-func CaseDetailPage(c CaseRow, timeline []TimelineEntry, users []UserOption) templ.Component {
+func CaseDetailPage(nav NavUser, c CaseRow, timeline []TimelineEntry, users []UserOption) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1091,7 +1091,7 @@ func CaseDetailPage(c CaseRow, timeline []TimelineEntry, users []UserOption) tem
 			}
 			return templ_7745c5c3_Err
 		})
-		templ_7745c5c3_Err = Layout("Case "+c.ID.String()[:8]).Render(templ.WithChildren(ctx, templ_7745c5c3_Var43), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout("Case "+c.ID.String()[:8], nav).Render(templ.WithChildren(ctx, templ_7745c5c3_Var43), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

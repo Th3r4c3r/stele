@@ -1,8 +1,16 @@
 package templates
 
+// NavUser is the strip-down view of the active user used by Layout's
+// topbar: name to greet, IsAdmin to gate the Admin link.
+type NavUser struct {
+	Name    string
+	Email   string
+	IsAdmin bool
+}
+
 // Layout is the chrome around every full-page response.
 // Fragment responses (HX-Request: true) render content directly without it.
-templ Layout(title string) {
+templ Layout(title string, nav NavUser) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
@@ -15,9 +23,18 @@ templ Layout(title string) {
 		<body>
 			<header class="topbar">
 				<a class="brand" href="/">Stele</a>
-				<nav>
+				<nav class="primary">
 					<a href="/cases">Cases</a>
+					if nav.IsAdmin {
+						<a href="/admin">Admin</a>
+					}
 				</nav>
+				<div class="user-menu">
+					<a class="user-link" href="/account" title={ nav.Email }>{ nav.Name }</a>
+					<form method="POST" action="/logout" class="inline-logout">
+						<button type="submit" class="link-button" title="Sign out">Sign out</button>
+					</form>
+				</div>
 			</header>
 			<main>
 				{ children... }

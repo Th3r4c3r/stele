@@ -38,7 +38,7 @@ func (a *adminHandlers) overview(w http.ResponseWriter, r *http.Request) {
 	_ = a.pool.QueryRow(r.Context(), `SELECT count(*) FROM assignment_rules`).Scan(&rules)
 	_ = a.pool.QueryRow(r.Context(), `SELECT count(*) FROM sessions WHERE expires_at > now()`).Scan(&sessions)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.AdminOverview(active, deactivated, dealers, rules, sessions).Render(r.Context(), w)
+	_ = templates.AdminOverview(navFor(r.Context(), a.users), active, deactivated, dealers, rules, sessions).Render(r.Context(), w)
 }
 
 // --- users ---
@@ -54,7 +54,7 @@ func (a *adminHandlers) usersList(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, toAdminUser(u))
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.AdminUsersPage(rows, templates.AdminUserFormData{Role: "ops"}).Render(r.Context(), w)
+	_ = templates.AdminUsersPage(navFor(r.Context(), a.users), rows, templates.AdminUserFormData{Role: "ops"}).Render(r.Context(), w)
 }
 
 func (a *adminHandlers) usersCreate(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +117,7 @@ func (a *adminHandlers) usersRenderListWithForm(w http.ResponseWriter, r *http.R
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnprocessableEntity)
-	_ = templates.AdminUsersPage(rows, data).Render(r.Context(), w)
+	_ = templates.AdminUsersPage(navFor(r.Context(), a.users), rows, data).Render(r.Context(), w)
 }
 
 func (a *adminHandlers) userEdit(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +135,7 @@ func (a *adminHandlers) userEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.AdminUserEditPage(toAdminUser(u), prefillUserForm(u)).Render(r.Context(), w)
+	_ = templates.AdminUserEditPage(navFor(r.Context(), a.users), toAdminUser(u), prefillUserForm(u)).Render(r.Context(), w)
 }
 
 func (a *adminHandlers) userUpdate(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +234,7 @@ func (a *adminHandlers) rulesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.AdminRulesPage(rules, assignees, templates.AdminRuleFormData{Priority: "50"}).Render(r.Context(), w)
+	_ = templates.AdminRulesPage(navFor(r.Context(), a.users), rules, assignees, templates.AdminRuleFormData{Priority: "50"}).Render(r.Context(), w)
 }
 
 func (a *adminHandlers) rulesCreate(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +255,7 @@ func (a *adminHandlers) rulesCreate(w http.ResponseWriter, r *http.Request) {
 		data.ErrorMsg = msg
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		_ = templates.AdminRulesPage(rules, assignees, data).Render(r.Context(), w)
+		_ = templates.AdminRulesPage(navFor(r.Context(), a.users), rules, assignees, data).Render(r.Context(), w)
 	}
 	priority, err := strconv.Atoi(data.Priority)
 	if err != nil || priority < 1 {
@@ -337,7 +337,7 @@ func (a *adminHandlers) dealersList(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, templates.AdminDealer{Code: d.Code, Name: d.Name, Region: d.Region, Country: d.Country})
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.AdminDealersPage(rows, templates.AdminDealerFormData{}).Render(r.Context(), w)
+	_ = templates.AdminDealersPage(navFor(r.Context(), a.users), rows, templates.AdminDealerFormData{}).Render(r.Context(), w)
 }
 
 func (a *adminHandlers) dealersCreate(w http.ResponseWriter, r *http.Request) {
@@ -360,7 +360,7 @@ func (a *adminHandlers) dealersCreate(w http.ResponseWriter, r *http.Request) {
 		data.ErrorMsg = "all fields are required"
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		_ = templates.AdminDealersPage(rows, data).Render(r.Context(), w)
+		_ = templates.AdminDealersPage(navFor(r.Context(), a.users), rows, data).Render(r.Context(), w)
 		return
 	}
 	if err := a.dealers.Upsert(r.Context(), dealer.Dealer{

@@ -43,6 +43,7 @@ type TimelineEntry struct {
 // CasesListPage renders the index with four tabs, kind filter (on
 // classified+closed) and assignee filter (on every status tab).
 templ CasesListPage(
+	nav NavUser,
 	triage []CaseRow,
 	classified []CaseRow,
 	closed []CaseRow,
@@ -51,10 +52,9 @@ templ CasesListPage(
 	kindFilter string,
 	assigneeFilter string,
 	users []UserOption,
-	currentUserName string,
 ) {
-	@Layout("Cases") {
-		@CasesListBody(triage, classified, closed, mine, activeTab, kindFilter, assigneeFilter, users, currentUserName)
+	@Layout("Cases", nav) {
+		@CasesListBody(triage, classified, closed, mine, activeTab, kindFilter, assigneeFilter, users, nav.Name)
 	}
 }
 
@@ -232,8 +232,8 @@ templ kindBadge(kind string) {
 }
 
 // NewCasePage shows the empty form.
-templ NewCasePage() {
-	@Layout("New case") {
+templ NewCasePage(nav NavUser) {
+	@Layout("New case", nav) {
 		<section class="page-head"><h1>New case</h1></section>
 		@NewCaseForm(NewCaseFormData{})
 	}
@@ -276,8 +276,8 @@ templ NewCaseForm(data NewCaseFormData) {
 }
 
 // CaseDetailPage renders a single case with its event timeline.
-templ CaseDetailPage(c CaseRow, timeline []TimelineEntry, users []UserOption) {
-	@Layout("Case " + c.ID.String()[:8]) {
+templ CaseDetailPage(nav NavUser, c CaseRow, timeline []TimelineEntry, users []UserOption) {
+	@Layout("Case "+c.ID.String()[:8], nav) {
 		@CaseDetailBody(c, timeline, users)
 	}
 }

@@ -57,6 +57,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 		mailSender: d.MailSender,
 		baseURL:    d.BaseURL,
 	}
+	acc := &accountHandlers{users: d.Users, sessions: d.Sessions}
 	adm := &adminHandlers{
 		pool:       d.Pool,
 		users:      d.Users,
@@ -94,6 +95,10 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /cases/{id}/classify", wrap(h.classifyCase))
 	mux.Handle("POST /cases/{id}/close", wrap(h.closeCase))
 	mux.Handle("POST /cases/{id}/transfer", wrap(h.transferCase))
+
+	// Per-user self-service
+	mux.Handle("GET /account", wrap(acc.page))
+	mux.Handle("POST /account/password", wrap(acc.changePassword))
 
 	// Admin
 	mux.Handle("GET /admin", wrapAdmin(adm.overview))
@@ -216,9 +221,11 @@ func (h *handlers) listCases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_ = currentUser // name now flows through nav
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.CasesListPage(triageRows, classifiedRows, closedRows, mineRows,
-		tab, kindFilter, assigneeParam, userOpts, currentUser.Name).Render(r.Context(), w)
+	_ = templates.CasesListPage(navFor(r.Context(), h.users),
+		triageRows, classifiedRows, closedRows, mineRows,
+		tab, kindFilter, assigneeParam, userOpts).Render(r.Context(), w)
 }
 
 func ifThenUUID(cond bool, v uuid.UUID) uuid.UUID {
@@ -237,7 +244,7 @@ func ifThen(cond bool, a, b string) string {
 
 func (h *handlers) newCaseForm(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.NewCasePage().Render(r.Context(), w)
+	_ = templates.NewCasePage(navFor(r.Context(), h.users)).Render(r.Context(), w)
 }
 
 func (h *handlers) createCase(w http.ResponseWriter, r *http.Request) {
@@ -315,7 +322,7 @@ func (h *handlers) showCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.CaseDetailPage(row, timeline, userOpts).Render(r.Context(), w)
+	_ = templates.CaseDetailPage(navFor(r.Context(), h.users), row, timeline, userOpts).Render(r.Context(), w)
 }
 
 func (h *handlers) addNote(w http.ResponseWriter, r *http.Request) {
