@@ -23,6 +23,15 @@ services:
       # the alias `db` (the Odoo Postgres). Using `stele-db` avoids the
       # collision: the name is unique across the Docker daemon.
       STELE_DATABASE_URL: postgres://stele:${STELE_DB_PASSWORD}@stele-db:5432/stele?sslmode=disable
+      # Auth (ADR-009). App refuses to start without a 32+ byte secret.
+      STELE_SESSION_SECRET: ${STELE_SESSION_SECRET}
+      STELE_BASE_URL: ${STELE_BASE_URL:-https://stele.178-105-44-164.nip.io}
+      # Email (optional; LogSender fallback when STELE_SMTP_HOST empty).
+      STELE_SMTP_HOST: ${STELE_SMTP_HOST:-}
+      STELE_SMTP_PORT: ${STELE_SMTP_PORT:-587}
+      STELE_SMTP_USER: ${STELE_SMTP_USER:-}
+      STELE_SMTP_PASS: ${STELE_SMTP_PASS:-}
+      STELE_SMTP_FROM: ${STELE_SMTP_FROM:-stele@stele.local}
     depends_on:
       db:
         condition: service_healthy
