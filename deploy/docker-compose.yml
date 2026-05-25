@@ -18,7 +18,11 @@ services:
     environment:
       STELE_ADDR: ":8080"
       STELE_VERSION: ${STELE_VERSION:-dev}
-      STELE_DATABASE_URL: postgres://stele:${STELE_DB_PASSWORD}@db:5432/stele?sslmode=disable
+      # Use the container_name (stele-db), not the service name (db). The app
+      # container also joins odoo_internal where another container exposes
+      # the alias `db` (the Odoo Postgres). Using `stele-db` avoids the
+      # collision: the name is unique across the Docker daemon.
+      STELE_DATABASE_URL: postgres://stele:${STELE_DB_PASSWORD}@stele-db:5432/stele?sslmode=disable
     depends_on:
       db:
         condition: service_healthy

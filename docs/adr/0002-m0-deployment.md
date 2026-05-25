@@ -60,6 +60,13 @@ Hetzner inspection (2026-05-25):
   `odoo-caddy-1` only.
 - `stele-db` is intentionally **not** attached to `odoo_internal`. The
   Odoo containers cannot reach the Stele database.
+- **Hostname rule (added 2026-05-25 after a multi-network collision):**
+  any in-app reference to another Stele container MUST use the
+  `container_name` (e.g. `stele-db`), not the compose `service` alias
+  (e.g. `db`). Service aliases are not scoped per network, so when a
+  container joins two networks and another container on the other
+  network has the same alias (Odoo's `db`), Docker DNS may resolve to
+  the wrong target. `container_name` is unique across the daemon.
 
 ### D5. Subdomain: `stele.178-105-44-164.nip.io`
 
