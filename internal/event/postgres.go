@@ -39,6 +39,7 @@ func (s *PostgresStore) Append(ctx context.Context, evs []Event) error {
 		    (id, aggregate_type, aggregate_id, type, payload, occurred_at)
 		VALUES
 		    ($1, $2, $3, $4, $5, $6)
+		RETURNING recorded_at, recorded_by
 	`
 	for i := range evs {
 		if evs[i].ID == uuid.Nil {
@@ -54,14 +55,14 @@ func (s *PostgresStore) Append(ctx context.Context, evs []Event) error {
 		if len(evs[i].Payload) == 0 {
 			evs[i].Payload = []byte("{}")
 		}
-		_, err = tx.Exec(ctx, q,
+		err = tx.QueryRow(ctx, q,
 			evs[i].ID,
 			evs[i].AggregateType,
 			evs[i].AggregateID,
 			evs[i].Type,
 			evs[i].Payload,
 			evs[i].OccurredAt,
-		)
+		).Scan(&evs[i].RecordedAt, &evs[i].RecordedBy)
 		if err != nil {
 			return fmt.Errorf("event.Append: insert %s: %w", evs[i].ID, err)
 		}
