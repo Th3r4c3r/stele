@@ -97,6 +97,12 @@ func (r *Repo) Upsert(ctx context.Context, u User) error {
 	if u.ID == uuid.Nil {
 		u.ID = uuid.Must(uuid.NewV7())
 	}
+	// pgx maps a nil []string to NULL; the column is NOT NULL DEFAULT '{}'
+	// but the default applies only when the column is omitted. Coalesce
+	// here so callers don't need to remember to pass an empty slice.
+	if u.Specializations == nil {
+		u.Specializations = []string{}
+	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO users (id, email, name, role, region, specializations)
 		VALUES ($1, $2, $3, $4, $5, $6)
