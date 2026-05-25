@@ -28,10 +28,14 @@ type Event struct {
 // StreamOptions controls a projection-engine scan over the log.
 //
 // Filtering is conjunctive: a non-empty AggregateType narrows to that
-// type, a non-zero AfterRecordedAt narrows to events recorded strictly
-// after the cursor.
+// type, and the cursor pair (AfterRecordedAt, AfterID) narrows to
+// events strictly after that point in the (recorded_at, id) keyset
+// order. Both parts of the cursor MUST be supplied together when
+// resuming from a persisted position; passing only AfterRecordedAt
+// would re-include any event sharing that exact timestamp.
 type StreamOptions struct {
 	AggregateType   string
 	AfterRecordedAt time.Time
+	AfterID         uuid.UUID
 	BatchSize       int // default 500
 }

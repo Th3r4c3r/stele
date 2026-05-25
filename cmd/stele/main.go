@@ -1,5 +1,5 @@
-// Stele M1 entrypoint. Single-binary HTTP server with embedded migrations
-// and a Postgres-backed event store.
+// Stele entrypoint. Single binary that serves HTTP and also supports
+// the `replay` sub-command for projection rebuilds.
 package main
 
 import (
@@ -20,6 +20,7 @@ import (
 
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/migrate"
+	"github.com/Th3r4c3r/stele/internal/projection"
 	"github.com/Th3r4c3r/stele/migrations"
 )
 
@@ -32,11 +33,36 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "replay":
+			os.Exit(runReplay(os.Args[2:]))
+		case "-h", "--help", "help":
+			printUsage()
+			os.Exit(0)
+		default:
+			fmt.Fprintf(os.Stderr, "unknown sub-command %q\n", os.Args[1])
+			printUsage()
+			os.Exit(2)
+		}
+	}
+
+	os.Exit(runServer())
+}
+
+func printUsage() {
+	fmt.Fprintln(os.Stderr, "usage:")
+	fmt.Fprintln(os.Stderr, "  stele                       # run HTTP server")
+	fmt.Fprintln(os.Stderr, "  stele replay <projector>    # rebuild one projection from scratch")
+	fmt.Fprintln(os.Stderr, "  stele replay --all          # rebuild every registered projection")
+}
+
+func runServer() int {
 	addr := envOr("STELE_ADDR", ":8080")
 	dbURL := os.Getenv("STELE_DATABASE_URL")
 	if dbURL == "" {
 		slog.Error("STELE_DATABASE_URL not set")
-		os.Exit(1)
+		return 1
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -45,23 +71,29 @@ func main() {
 	slog.Info("running migrations")
 	if err := migrate.Up(migrations.FS, dbURL); err != nil {
 		slog.Error("migrations failed", "err", err)
-		os.Exit(1)
+		return 1
 	}
 
 	pool, err := openPool(ctx, dbURL)
 	if err != nil {
 		slog.Error("db pool", "err", err)
-		os.Exit(1)
+		return 1
 	}
 	defer pool.Close()
 
 	store := event.NewPostgresStore(pool)
+
+	runner := projection.NewRunner(store, pool)
+	runner.Register(projection.EventCountByType())
+	runnerWG := runner.Start(ctx)
+	slog.Info("projection runner started", "projectors", runner.Names())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", indexHandler)
 	mux.HandleFunc("GET /healthz", healthzHandler(pool))
 	mux.HandleFunc("POST /debug/event", appendDebugEvent(store))
 	mux.HandleFunc("GET /debug/events", listDebugEvents(store))
+	mux.HandleFunc("GET /debug/projections", listProjections(pool))
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -79,12 +111,64 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("shutdown signal received")
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("graceful shutdown failed", "err", err)
-		os.Exit(1)
+		return 1
 	}
+	runnerWG.Wait()
+	return 0
+}
+
+func runReplay(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "replay: missing projector name (or --all)")
+		printUsage()
+		return 2
+	}
+	dbURL := os.Getenv("STELE_DATABASE_URL")
+	if dbURL == "" {
+		slog.Error("STELE_DATABASE_URL not set")
+		return 1
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := migrate.Up(migrations.FS, dbURL); err != nil {
+		slog.Error("migrations failed", "err", err)
+		return 1
+	}
+	pool, err := openPool(ctx, dbURL)
+	if err != nil {
+		slog.Error("db pool", "err", err)
+		return 1
+	}
+	defer pool.Close()
+
+	store := event.NewPostgresStore(pool)
+	runner := projection.NewRunner(store, pool)
+	runner.Register(projection.EventCountByType())
+
+	targets := args
+	if args[0] == "--all" {
+		targets = runner.Names()
+	}
+	for _, name := range targets {
+		slog.Info("replaying", "projector", name)
+		if err := runner.ResetCursor(ctx, name); err != nil {
+			slog.Error("reset cursor", "projector", name, "err", err)
+			return 1
+		}
+		if err := runner.RunOnce(ctx, name); err != nil {
+			slog.Error("replay run", "projector", name, "err", err)
+			return 1
+		}
+		slog.Info("replay complete", "projector", name)
+	}
+	return 0
 }
 
 func openPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
@@ -138,8 +222,6 @@ func healthzHandler(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-// appendDebugEvent accepts a JSON Event and appends it. Smoke-test only.
-// Will be removed when the warranty domain ships real handlers (M2).
 type debugEventReq struct {
 	AggregateType string          `json:"aggregate_type"`
 	AggregateID   uuid.UUID       `json:"aggregate_id"`
@@ -198,6 +280,38 @@ func listDebugEvents(store *event.PostgresStore) http.HandlerFunc {
 			if len(out) >= limit {
 				break
 			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
+	}
+}
+
+type projectionCount struct {
+	AggregateType string `json:"aggregate_type"`
+	Type          string `json:"type"`
+	Count         int64  `json:"count"`
+}
+
+func listProjections(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rows, err := pool.Query(r.Context(), `
+			SELECT aggregate_type, type, count
+			FROM projection_event_counts
+			ORDER BY aggregate_type, type
+		`)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		out := []projectionCount{}
+		for rows.Next() {
+			var pc projectionCount
+			if err := rows.Scan(&pc.AggregateType, &pc.Type, &pc.Count); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			out = append(out, pc)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)

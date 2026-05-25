@@ -111,7 +111,7 @@ func (s *PostgresStore) Stream(ctx context.Context, opts StreamOptions) iter.Seq
 	}
 	return func(yield func(Event, error) bool) {
 		cursorTime := opts.AfterRecordedAt
-		cursorID := uuid.Nil
+		cursorID := opts.AfterID
 		for {
 			evs, err := s.streamBatch(ctx, opts.AggregateType, cursorTime, cursorID, batch)
 			if err != nil {
