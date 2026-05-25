@@ -208,6 +208,7 @@ func runReplay(args []string) int {
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
 	runner.Register(fault.CurrentCasesProjector())
+	runner.Register(document.CurrentDocumentsProjector())
 
 	targets := args
 	if args[0] == "--all" {
