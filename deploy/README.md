@@ -27,7 +27,7 @@ cd ~/odoo && docker compose exec caddy caddy validate --config /etc/caddy/Caddyf
 docker compose restart caddy
 
 # 5. Verify
-curl -sS https://stele.178-105-44-164.sslip.io/healthz
+curl -sS https://stele.178-105-44-164.nip.io/healthz
 ```
 
 ## Update an existing deployment

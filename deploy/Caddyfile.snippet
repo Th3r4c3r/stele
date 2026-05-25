@@ -4,8 +4,13 @@
 #
 # The Stele app container joins the existing `odoo_internal` Docker network so
 # Caddy can resolve `stele-app` by DNS. No new ports are opened on the host.
+#
+# Why nip.io and not sslip.io: Let's Encrypt enforces a per-registered-domain
+# weekly cert rate limit. sslip.io hit that limit during M0 deploy. nip.io is
+# a drop-in equivalent (wildcard DNS to embedded IP) with a separate quota.
+# See ADR-002 D5.
 
-stele.178-105-44-164.sslip.io {
+stele.178-105-44-164.nip.io {
 	encode zstd gzip
 
 	reverse_proxy stele-app:8080 {

@@ -61,10 +61,14 @@ Hetzner inspection (2026-05-25):
 - `stele-db` is intentionally **not** attached to `odoo_internal`. The
   Odoo containers cannot reach the Stele database.
 
-### D5. Subdomain: `stele.178-105-44-164.sslip.io`
+### D5. Subdomain: `stele.178-105-44-164.nip.io`
 
-- sslip.io maps `<dashed-ip>.sslip.io` to the IP. Free, no DNS to manage.
+- nip.io maps `<dashed-ip>.nip.io` to the IP. Free, no DNS to manage.
 - Caddy gets a Let's Encrypt cert automatically.
+- Originally planned on sslip.io (used by Odoo) but hit the Let's Encrypt
+  per-registered-domain rate limit (250k certs / 168h on sslip.io) during
+  the first M0 deploy. nip.io is a drop-in equivalent with separate
+  ACME quota. Odoo stays on its existing sslip.io cert (already issued).
 - Revisit if/when Yan registers a real domain (post-M5 at the earliest).
 
 ### D6. Go module path: `github.com/Th3r4c3r/stele`
