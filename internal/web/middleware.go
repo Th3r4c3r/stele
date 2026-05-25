@@ -63,7 +63,9 @@ func (m *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 }
 
 func (m *AuthMiddleware) deny(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
+	// Safe methods navigate to a login page; mutating methods get a
+	// machine-readable 401 (HTMX-friendly).
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		http.Redirect(w, r, "/login?return="+r.URL.Path, http.StatusFound)
 		return
 	}
