@@ -40,18 +40,20 @@ runs on the Hetzner instance at a URL Yan can open.
 - Live: 200 cases (189 closed / 10 classified / 1 triage at re-seed time)
   at https://stele.178-105-44-164.nip.io/cases
 
-## M3 — Multi-user prep + auto-assignment
-- Master data: users, dealers (with region), assignment_rules.
+## M3 — Multi-user prep + auto-assignment (DONE 2026-05-25)
+- Master data: users, dealers (with region), assignment_rules. ✅
 - New event: `CaseAssigned { assignee_id, reason, rule_name, transferred_from }`.
-  Reasons: `opener`, `rule:fault_prefix`, `rule:dealer_region`, `manual`.
-- Routing: pure function with priority fault_prefix > dealer_region > opener default.
-- Reassign command (manual transfer at any time).
+  Reasons: `opener`, `rule:fault_prefix`, `rule:dealer_region`, `manual`. ✅
+- Routing: pure function with priority fault_prefix > dealer_region > opener default. ✅
+- Reassign command (manual transfer at any time). ✅
 - UI: assignee column in list, transfer form in detail, "My cases" tab,
-  assignment history in timeline.
+  assignment history in timeline. ✅
 - HTTP middleware reads `STELE_DEFAULT_USER_EMAIL` -> resolves user_id ->
-  injects into ctx. Auth replaces this in M5+ with zero handler refactor.
+  injects into ctx. Auth replaces this in M5+ with zero handler refactor. ✅
 - Synthetic seed: 12 dealers (regions IT/FR/ES/DE), 5 users with roles +
-  specializations, 4-5 rules; re-seed 200 cases with routing applied.
+  specializations, 4 rules; re-seeded 200 cases with routing applied. ✅
+- Distribution in prod: Mario 54 (BMS_*), Yan 54 (opener fallback),
+  Ana 43 (MOTOR_*), JP 25 (ES dealers), Kris 24 (DE dealers).
 
 ## M4 — Documents (storage only)
 - Attach PDF to a case via event. Filesystem under `/data/documents/`,
