@@ -82,6 +82,43 @@ func (d *docHandlers) uploadDocument(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/cases/"+caseID.String(), http.StatusSeeOther)
 }
 
+// deleteDocument: POST /documents/{id}/delete
+// Appends a DocumentRedacted event; the projector removes the row +
+// unlinks the file. Redirects back to the parent case detail.
+func (d *docHandlers) deleteDocument(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseDocID(w, r)
+	if !ok {
+		return
+	}
+	redactedBy, err := userpkg.FromCtx(r.Context())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	// Look up the case_id + filename so the event carries them, and so
+	// we can redirect to the right detail page.
+	var caseID uuid.UUID
+	var filename string
+	err = d.pool.QueryRow(r.Context(),
+		`SELECT case_id, filename FROM current_documents WHERE id = $1`, id,
+	).Scan(&caseID, &filename)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Already gone. Send back to /cases since we don't know the parent.
+		http.Redirect(w, r, "/cases", http.StatusSeeOther)
+		return
+	}
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	reason := r.PostFormValue("reason") // best-effort: form may not have one
+	if err := document.RedactDocument(r.Context(), d.store, caseID, id, redactedBy, filename, reason); err != nil {
+		httpErr(w, err)
+		return
+	}
+	http.Redirect(w, r, "/cases/"+caseID.String(), http.StatusSeeOther)
+}
+
 // downloadDocument: GET /documents/{id}/raw
 // Streams the file with Content-Disposition: attachment.
 func (d *docHandlers) downloadDocument(w http.ResponseWriter, r *http.Request) {

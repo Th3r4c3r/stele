@@ -72,3 +72,38 @@ func AttachDocument(
 	}
 	return doc, nil
 }
+
+// RedactDocument appends a DocumentRedacted event. The projector
+// reacts by removing the row from current_documents and unlinking the
+// file on disk. The DocumentAttached event stays in the log so the
+// audit trail still shows what was once there.
+func RedactDocument(
+	ctx context.Context,
+	store *event.PostgresStore,
+	caseID, docID, redactedBy uuid.UUID,
+	originalFilename, reason string,
+) error {
+	if caseID == uuid.Nil || docID == uuid.Nil || redactedBy == uuid.Nil {
+		return fmt.Errorf("%w: case_id, doc_id and redacted_by required", ErrValidation)
+	}
+	payload, err := MarshalPayload(DocumentRedacted{
+		DocumentID:       docID,
+		OriginalFilename: SanitizeFilename(originalFilename),
+		RedactedByUserID: redactedBy,
+		Reason:           reason,
+	})
+	if err != nil {
+		return err
+	}
+	ev := event.Event{
+		AggregateType: fault.AggregateType,
+		AggregateID:   caseID,
+		Type:          EventDocumentRedacted,
+		Payload:       payload,
+		OccurredAt:    time.Now().UTC(),
+	}
+	if err := store.Append(ctx, []event.Event{ev}); err != nil {
+		return fmt.Errorf("RedactDocument: append: %w", err)
+	}
+	return nil
+}

@@ -376,7 +376,16 @@ templ DocumentsList(docs []DocumentRow) {
 						<td>{ d.HumanSize() }</td>
 						<td>{ d.AttachedAt.Format("2006-01-02 15:04") }</td>
 						<td>{ d.AttachedByName }</td>
-						<td><a href={ templ.URL("/documents/" + d.ID.String() + "/raw") }>Download</a></td>
+						<td>
+							<a href={ templ.URL("/documents/" + d.ID.String() + "/raw") }>Download</a>
+							<span class="muted"> &middot; </span>
+							<form method="POST"
+							      action={ templ.URL("/documents/" + d.ID.String() + "/delete") }
+							      class="inline-confirm"
+							      onsubmit="return confirm('Remove this attachment? The file will be deleted; the audit event stays in the log.');">
+								<button type="submit" class="link-button danger">Delete</button>
+							</form>
+						</td>
 					</tr>
 				}
 			</tbody>

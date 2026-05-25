@@ -105,7 +105,7 @@ func runServer() int {
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
 	runner.Register(fault.CurrentCasesProjector())
-	runner.Register(document.CurrentDocumentsProjector())
+	runner.Register(document.CurrentDocumentsProjector(docStorage))
 	runnerWG := runner.Start(ctx)
 	slog.Info("projection runner started", "projectors", runner.Names())
 
@@ -208,7 +208,17 @@ func runReplay(args []string) int {
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
 	runner.Register(fault.CurrentCasesProjector())
-	runner.Register(document.CurrentDocumentsProjector())
+	// replay also needs the storage so DocumentRedacted events unlink
+	// the file on disk (idempotent: missing-file is treated as no-op).
+	replayDocs, err := document.NewStorage(
+		envOr("STELE_DOCS_DIR", "/data/documents"),
+		26214400,
+	)
+	if err != nil {
+		slog.Error("replay docs storage", "err", err)
+		return 1
+	}
+	runner.Register(document.CurrentDocumentsProjector(replayDocs))
 
 	targets := args
 	if args[0] == "--all" {

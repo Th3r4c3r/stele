@@ -86,6 +86,9 @@ main {
 	border-radius: 4px;
 }
 .link-button:hover { color: var(--fg); background: #f0f0f0; }
+.link-button.danger { color: var(--danger); }
+.link-button.danger:hover { background: var(--error-bg); }
+.inline-confirm { display: inline; margin: 0; padding: 0; background: none; border: 0; }
 
 .footer {
 	text-align: center;

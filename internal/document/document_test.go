@@ -150,7 +150,7 @@ func TestAttachAndProjectAndRedact(t *testing.T) {
 	}
 
 	runner := projection.NewRunner(store, pool)
-	runner.Register(CurrentDocumentsProjector())
+	runner.Register(CurrentDocumentsProjector(s))
 	if err := runner.RunOnce(ctx, "current_documents"); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -168,12 +168,28 @@ func TestAttachAndProjectAndRedact(t *testing.T) {
 		t.Fatalf("replay rows: %d want 1 (idempotency broken)", n)
 	}
 
-	// Delete works (future redaction path).
-	if err := s.Delete(doc.DocumentID); err != nil {
-		t.Fatalf("delete: %v", err)
+	// RedactDocument: appending the event + running the projector
+	// must remove the row AND the file.
+	if err := RedactDocument(ctx, store, caseID, doc.DocumentID, opener, doc.OriginalFilename, "smoke"); err != nil {
+		t.Fatalf("redact: %v", err)
+	}
+	if err := runner.RunOnce(ctx, "current_documents"); err != nil {
+		t.Fatalf("run after redact: %v", err)
+	}
+	pool.QueryRow(ctx, `SELECT count(*) FROM current_documents WHERE id = $1`, doc.DocumentID).Scan(&n)
+	if n != 0 {
+		t.Fatalf("after redact rows: %d want 0", n)
 	}
 	if _, err := s.Open(doc.DocumentID); !os.IsNotExist(err) {
-		t.Fatalf("expected file removed, got %v", err)
+		t.Fatalf("expected file removed by projector, got %v", err)
+	}
+
+	// Replay after redact: still 0 (DELETE is idempotent; missing file is no-op).
+	_ = runner.ResetCursor(ctx, "current_documents")
+	_ = runner.RunOnce(ctx, "current_documents")
+	pool.QueryRow(ctx, `SELECT count(*) FROM current_documents WHERE id = $1`, doc.DocumentID).Scan(&n)
+	if n != 0 {
+		t.Fatalf("after replay+redact rows: %d want 0", n)
 	}
 }
 

@@ -100,6 +100,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /cases/{id}/transfer", wrap(h.transferCase))
 	mux.Handle("POST /cases/{id}/documents", wrap(docs.uploadDocument))
 	mux.Handle("GET /documents/{id}/raw", wrap(docs.downloadDocument))
+	mux.Handle("POST /documents/{id}/delete", wrap(docs.deleteDocument))
 
 	// Per-user self-service
 	mux.Handle("GET /account", wrap(acc.page))
@@ -691,16 +692,27 @@ func summarize(eventType string, payload []byte, nameByID map[uuid.UUID]string) 
 }
 
 func summarizeDocument(v any, nameByID map[uuid.UUID]string) string {
-	d, ok := v.(document.DocumentAttached)
-	if !ok {
+	switch d := v.(type) {
+	case document.DocumentAttached:
+		who := nameByID[d.AttachedByUserID]
+		if who == "" {
+			who = d.AttachedByUserID.String()[:8]
+		}
+		return fmt.Sprintf("%s uploaded %s (%s, %s)",
+			who, d.OriginalFilename, d.ContentType, humanBytes(d.ByteSize))
+	case document.DocumentRedacted:
+		who := nameByID[d.RedactedByUserID]
+		if who == "" {
+			who = d.RedactedByUserID.String()[:8]
+		}
+		s := fmt.Sprintf("%s removed %s", who, d.OriginalFilename)
+		if d.Reason != "" {
+			s += " (reason: " + d.Reason + ")"
+		}
+		return s
+	default:
 		return ""
 	}
-	who := nameByID[d.AttachedByUserID]
-	if who == "" {
-		who = d.AttachedByUserID.String()[:8]
-	}
-	return fmt.Sprintf("%s uploaded %s (%s, %s)",
-		who, d.OriginalFilename, d.ContentType, humanBytes(d.ByteSize))
 }
 
 func humanBytes(n int64) string {

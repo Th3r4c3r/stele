@@ -10,9 +10,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// EventDocumentAttached is the event type string stored on events.type.
-// The aggregate_type is the parent case's "fault_case".
-const EventDocumentAttached = "DocumentAttached"
+// Event type strings stored on events.type. All live on the parent
+// case's "fault_case" aggregate.
+const (
+	EventDocumentAttached = "DocumentAttached"
+	EventDocumentRedacted = "DocumentRedacted"
+)
 
 // DocumentAttached is the payload struct. Path on disk is NOT stored
 // here: derive it via storage.PathFor(DocumentID) so the directory
@@ -24,6 +27,17 @@ type DocumentAttached struct {
 	OriginalFilename string    `json:"original_filename"`
 	ByteSize         int64     `json:"byte_size"`
 	AttachedByUserID uuid.UUID `json:"attached_by_user_id"`
+}
+
+// DocumentRedacted is the soft-delete event. The projector responds
+// by removing the current_documents row and unlinking the file on
+// disk. The DocumentAttached event remains in the log so the audit
+// trail still says what was there.
+type DocumentRedacted struct {
+	DocumentID       uuid.UUID `json:"document_id"`
+	OriginalFilename string    `json:"original_filename"` // copied for the timeline summary
+	RedactedByUserID uuid.UUID `json:"redacted_by_user_id"`
+	Reason           string    `json:"reason,omitempty"`
 }
 
 // MarshalPayload encodes the event for storage in events.payload.
@@ -43,6 +57,12 @@ func DecodePayload(eventType string, payload json.RawMessage) (any, error) {
 		var v DocumentAttached
 		if err := json.Unmarshal(payload, &v); err != nil {
 			return nil, fmt.Errorf("decode DocumentAttached: %w", err)
+		}
+		return v, nil
+	case EventDocumentRedacted:
+		var v DocumentRedacted
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return nil, fmt.Errorf("decode DocumentRedacted: %w", err)
 		}
 		return v, nil
 	default:
