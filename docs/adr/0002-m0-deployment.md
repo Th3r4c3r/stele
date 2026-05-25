@@ -67,13 +67,12 @@ Hetzner inspection (2026-05-25):
 - Caddy gets a Let's Encrypt cert automatically.
 - Revisit if/when Yan registers a real domain (post-M5 at the earliest).
 
-### D6. Go module path: `github.com/yan-mtl/stele` (placeholder)
+### D6. Go module path: `github.com/Th3r4c3r/stele`
 
-- The module must compile and be importable. We do not yet know whether
-  the repo will live under Yan's personal GitHub account or a new org.
-- Picked `yan-mtl` as a placeholder. Rename is a single `go mod edit`
-  plus a find-replace across imports when Yan confirms the destination.
-- Tracked as an Ask-Yan-once item at the end of M0 (see [[pm_brain]]).
+- Resolved 2026-05-25: Yan created the repo at
+  https://github.com/Th3r4c3r/stele under his personal account.
+- The initial scaffold used a `github.com/yan-mtl/stele` placeholder
+  while waiting for confirmation; commit after `f617684` renames it.
 
 ### D7. Local toolchain: not required at M0
 
