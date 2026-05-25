@@ -22,15 +22,23 @@ runs on the Hetzner instance at a URL Yan can open.
 - Integration tests over synthetic streams, replay idempotency, cursor advance. ✅
 - Endpoints live: `/debug/projections`, plus existing `/debug/event[s]`.
 
-## M2 — Warranty domain (DONE 2026-05-25)
-- Aggregate: `Claim`. Events: `ClaimOpened`, `NoteAdded`, `ClaimClosed`. ✅
-  (`ClaimUpdated` dropped per ADR-005 D2: events are facts, not generic updates.)
-- Projection: `current_claims` (status, dealer, vin, fault_code, note_count, ...). ✅
-- UI: HTMX + Templ at `/claims`. List, new form, detail with timeline,
-  add-note (HTMX fragment swap), close. ✅
-- Synthetic dataset: `cmd/seed -count 200` (982 events in 653ms). ✅
+## M2 — Fault-case domain (DONE 2026-05-25, refactored at M2.5)
+- Originally landed as `warranty_claim`; refactored to `fault_case` after
+  Yan flagged the modelling error (see ADR-007). UI at /cases.
+- Aggregate: `fault_case`. Status: triage -> classified -> closed.
+- Kinds (enum): warranty, out_of_warranty, goodwill, recall, unrelated,
+  customer_education.
+- Events: `CaseOpened`, `NoteAdded`, `Classified`, `CaseClosed`. ✅
+- Projection: `current_cases` (status, kind nullable, dealer, vin,
+  fault_code, note_count, classified_at, closed_at, ...). ✅
+- UI: HTMX + Templ. Three tabs (Triage / Classified / Closed) with kind
+  filter chips on Classified+Closed. Detail with status+kind badges and
+  contextual actions (Classify, Re-classify, Close, Add note). ✅
+- Synthetic dataset: `cmd/seed -count 200` with realistic kind
+  distribution (~1175 events in ~830ms). ✅
 - Backup: nightly `pg_dump` at 03:30, 7-day rotation. ✅
-- Live: 200 claims (178 closed / 22 open) seeded at https://stele.178-105-44-164.nip.io/claims
+- Live: 200 cases (189 closed / 10 classified / 1 triage at re-seed time)
+  at https://stele.178-105-44-164.nip.io/cases
 
 ## M3 — Documents
 - Attach PDF to a claim via event.
