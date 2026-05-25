@@ -16,8 +16,18 @@ import (
 // Handlers map it to HTTP 422.
 var ErrValidation = errors.New("validation")
 
-// OpenCase records a new fault case. Status starts as "triage".
-func OpenCase(ctx context.Context, store *event.PostgresStore, p CaseOpened) (uuid.UUID, error) {
+// OpenCase records a new fault case and immediately emits its first
+// CaseAssigned via the routing resolver. Status starts as "triage".
+//
+// openerID is the user who opens the case (e.g., the current logged-in
+// user). It is the routing fallback when no rule matches.
+func OpenCase(
+	ctx context.Context,
+	store *event.PostgresStore,
+	resolver Resolver,
+	openerID uuid.UUID,
+	p CaseOpened,
+) (uuid.UUID, error) {
 	p.Dealer = strings.TrimSpace(p.Dealer)
 	p.VIN = strings.TrimSpace(strings.ToUpper(p.VIN))
 	p.FaultCode = strings.TrimSpace(p.FaultCode)
@@ -35,23 +45,94 @@ func OpenCase(ctx context.Context, store *event.PostgresStore, p CaseOpened) (uu
 	if p.Description == "" {
 		return uuid.Nil, fmt.Errorf("%w: description required", ErrValidation)
 	}
+	if openerID == uuid.Nil {
+		return uuid.Nil, fmt.Errorf("%w: opener_id required", ErrValidation)
+	}
 
 	caseID := uuid.Must(uuid.NewV7())
-	payload, err := MarshalPayload(p)
+	openedPayload, err := MarshalPayload(p)
 	if err != nil {
 		return uuid.Nil, err
+	}
+	now := time.Now().UTC()
+
+	// Compute routing BEFORE the first append so we can batch both
+	// events atomically. A routing failure aborts the open entirely.
+	dec, err := resolver.ResolveForOpen(ctx, RouteInput{
+		FaultCode:  p.FaultCode,
+		DealerCode: p.Dealer,
+		OpenerID:   openerID,
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("OpenCase: routing: %w", err)
+	}
+	assignedPayload, err := MarshalPayload(CaseAssigned{
+		AssigneeID: dec.AssigneeID,
+		Reason:     dec.Reason,
+		RuleName:   dec.RuleName,
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	evs := []event.Event{
+		{
+			AggregateType: AggregateType,
+			AggregateID:   caseID,
+			Type:          EventCaseOpened,
+			Payload:       openedPayload,
+			OccurredAt:    now,
+		},
+		{
+			AggregateType: AggregateType,
+			AggregateID:   caseID,
+			Type:          EventCaseAssigned,
+			Payload:       assignedPayload,
+			OccurredAt:    now,
+		},
+	}
+	if err := store.Append(ctx, evs); err != nil {
+		return uuid.Nil, fmt.Errorf("OpenCase: append: %w", err)
+	}
+	return caseID, nil
+}
+
+// Reassign transfers a case to newAssigneeID. transferredFrom should be
+// the current assignee (nullable if unknown). Use ReasonManual.
+func Reassign(
+	ctx context.Context,
+	store *event.PostgresStore,
+	caseID, newAssigneeID uuid.UUID,
+	transferredFrom *uuid.UUID,
+) error {
+	if caseID == uuid.Nil {
+		return fmt.Errorf("%w: case_id required", ErrValidation)
+	}
+	if newAssigneeID == uuid.Nil {
+		return fmt.Errorf("%w: new_assignee required", ErrValidation)
+	}
+	if transferredFrom != nil && *transferredFrom == newAssigneeID {
+		return fmt.Errorf("%w: case already assigned to that user", ErrValidation)
+	}
+	payload, err := MarshalPayload(CaseAssigned{
+		AssigneeID:      newAssigneeID,
+		Reason:          ReasonManual,
+		TransferredFrom: transferredFrom,
+	})
+	if err != nil {
+		return err
 	}
 	ev := event.Event{
 		AggregateType: AggregateType,
 		AggregateID:   caseID,
-		Type:          EventCaseOpened,
+		Type:          EventCaseAssigned,
 		Payload:       payload,
 		OccurredAt:    time.Now().UTC(),
 	}
 	if err := store.Append(ctx, []event.Event{ev}); err != nil {
-		return uuid.Nil, fmt.Errorf("OpenCase: append: %w", err)
+		return fmt.Errorf("Reassign: append: %w", err)
 	}
-	return caseID, nil
+	return nil
 }
 
 // AddNote appends a NoteAdded event. Allowed in any status.

@@ -8,6 +8,8 @@ package fault
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/google/uuid"
 )
 
 // AggregateType is the canonical string for the aggregate_type column.
@@ -15,10 +17,19 @@ const AggregateType = "fault_case"
 
 // Event type names. Stable strings used as the events.type column.
 const (
-	EventCaseOpened = "CaseOpened"
-	EventNoteAdded  = "NoteAdded"
-	EventClassified = "Classified"
-	EventCaseClosed = "CaseClosed"
+	EventCaseOpened   = "CaseOpened"
+	EventCaseAssigned = "CaseAssigned"
+	EventNoteAdded    = "NoteAdded"
+	EventClassified   = "Classified"
+	EventCaseClosed   = "CaseClosed"
+)
+
+// Reason values for CaseAssigned.
+const (
+	ReasonOpener            = "opener"
+	ReasonRuleFaultPrefix   = "rule:fault_prefix"
+	ReasonRuleDealerRegion  = "rule:dealer_region"
+	ReasonManual            = "manual"
 )
 
 // Status values for the current_cases read model.
@@ -82,6 +93,16 @@ type Classified struct {
 	Reasoning string `json:"reasoning"`
 }
 
+// CaseAssigned records an assignment or transfer. The first
+// CaseAssigned on a case is auto-emitted by OpenCase via routing.
+// Subsequent ones come from Reassign.
+type CaseAssigned struct {
+	AssigneeID      uuid.UUID  `json:"assignee_id"`
+	Reason          string     `json:"reason"`
+	RuleName        string     `json:"rule_name,omitempty"`
+	TransferredFrom *uuid.UUID `json:"transferred_from,omitempty"`
+}
+
 // CaseClosed is the terminal event. Status -> "closed". May arrive
 // before any Classified (closed-from-triage); in that case the row's
 // kind stays NULL.
@@ -118,6 +139,12 @@ func DecodePayload(eventType string, payload json.RawMessage) (any, error) {
 		var v Classified
 		if err := json.Unmarshal(payload, &v); err != nil {
 			return nil, fmt.Errorf("decode Classified: %w", err)
+		}
+		return v, nil
+	case EventCaseAssigned:
+		var v CaseAssigned
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return nil, fmt.Errorf("decode CaseAssigned: %w", err)
 		}
 		return v, nil
 	case EventCaseClosed:

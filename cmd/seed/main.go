@@ -1,17 +1,15 @@
 // Stele synthetic seeder.
 //
-// Generates synthetic fault cases via the fault package's command API
-// with a realistic kind distribution. Useful for stress-testing the
-// projection runner and exercising the UI on a non-trivial volume.
+// Seeds master data (users, dealers, assignment rules), then generates
+// synthetic fault cases via the fault package's command API. Each
+// OpenCase invocation runs the routing resolver, so the seeded cases
+// land with a realistic assignee distribution.
 //
 // USAGE:
 //
-//	stele-seed -count 200 [-clean]
+//	stele-seed -count 200 [-clean] [-skip-master]
 //
-// Reads STELE_DATABASE_URL from the environment. The -clean flag wipes
-// events + projection tables first (dev only; production has the
-// append-only trigger which the script bypasses with
-// session_replication_role=replica).
+// Reads STELE_DATABASE_URL from the environment.
 package main
 
 import (
@@ -29,16 +27,57 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Th3r4c3r/stele/internal/dealer"
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/migrate"
+	"github.com/Th3r4c3r/stele/internal/user"
 	"github.com/Th3r4c3r/stele/migrations"
 )
 
-var dealers = []string{
-	"DEALER_01", "DEALER_02", "DEALER_03", "DEALER_04",
-	"DEALER_05", "DEALER_06", "DEALER_07", "DEALER_08",
-	"DEALER_09", "DEALER_10", "DEALER_11", "DEALER_12",
+// Master data definitions — fully synthetic.
+
+var seedUsers = []user.User{
+	{Email: "yan@stele.local", Name: "Yan", Role: "ops_generalist"},
+	{Email: "mario.bms@stele.local", Name: "Mario Bossi", Role: "battery_specialist",
+		Specializations: []string{"BMS_", "CHARGER_"}},
+	{Email: "ana.motor@stele.local", Name: "Ana Motor", Role: "motor_specialist",
+		Specializations: []string{"MOTOR_"}},
+	{Email: "jp.es@stele.local", Name: "JP Iberia", Role: "regional_ops",
+		Region: ptr("ES")},
+	{Email: "kris.de@stele.local", Name: "Kris Bauer", Role: "regional_ops",
+		Region: ptr("DE")},
+}
+
+func ptr[T any](v T) *T { return &v }
+
+var seedDealers = []dealer.Dealer{
+	{Code: "DEALER_01", Name: "Milano EV Center", Region: "IT", Country: "IT"},
+	{Code: "DEALER_02", Name: "Torino Mobility", Region: "IT", Country: "IT"},
+	{Code: "DEALER_03", Name: "Bologna Two-Wheels", Region: "IT", Country: "IT"},
+	{Code: "DEALER_04", Name: "Roma EV Hub", Region: "IT", Country: "IT"},
+	{Code: "DEALER_05", Name: "Paris VE Service", Region: "FR", Country: "FR"},
+	{Code: "DEALER_06", Name: "Lyon Mobility", Region: "FR", Country: "FR"},
+	{Code: "DEALER_07", Name: "Marseille Scoot", Region: "FR", Country: "FR"},
+	{Code: "DEALER_08", Name: "Madrid Mobilidad", Region: "ES", Country: "ES"},
+	{Code: "DEALER_09", Name: "Barcelona Moto-E", Region: "ES", Country: "ES"},
+	{Code: "DEALER_10", Name: "Valencia EV", Region: "ES", Country: "ES"},
+	{Code: "DEALER_11", Name: "Berlin E-Mobil", Region: "DE", Country: "DE"},
+	{Code: "DEALER_12", Name: "Munich Roller", Region: "DE", Country: "DE"},
+}
+
+// Rule specs: (name, priority, fault prefix, region, assignee email).
+var seedRules = []struct {
+	Name     string
+	Priority int
+	Prefix   string
+	Region   string
+	Email    string
+}{
+	{"battery faults to mario", 10, "BMS_", "", "mario.bms@stele.local"},
+	{"motor faults to ana", 20, "MOTOR_", "", "ana.motor@stele.local"},
+	{"spanish dealers to jp", 30, "", "ES", "jp.es@stele.local"},
+	{"german dealers to kris", 40, "", "DE", "kris.de@stele.local"},
 }
 
 var faultCodes = []string{
@@ -60,7 +99,7 @@ var descriptions = []string{
 	"Field report from group ride; multiple units affected.",
 }
 
-var authors = []string{"yan", "system", "service_team", "ops"}
+var noteAuthors = []string{"yan", "system", "service_team", "ops"}
 
 var noteSnippets = []string{
 	"Initial diagnosis attempted, awaiting parts.",
@@ -73,8 +112,6 @@ var noteSnippets = []string{
 	"Dealer reports no further occurrences after fix.",
 }
 
-// reasoningByKind seeds plausible reasoning strings for each kind, so
-// the timeline isn't all "lorem ipsum". Domain-flavoured.
 var reasoningByKind = map[string][]string{
 	fault.KindWarranty: {
 		"Component within 24-month warranty window.",
@@ -118,6 +155,18 @@ var resolutions = []string{
 	"Recall remedy applied per campaign instructions.",
 }
 
+var kindWeights = []struct {
+	kind   string
+	weight int
+}{
+	{fault.KindWarranty, 35},
+	{fault.KindOutOfWarranty, 20},
+	{fault.KindCustomerEducation, 15},
+	{fault.KindUnrelated, 15},
+	{fault.KindGoodwill, 10},
+	{fault.KindRecall, 5},
+}
+
 var vinAlphabet = []rune("ABCDEFGHJKLMNPRSTUVWXYZ0123456789")
 
 func randomVIN(r *rand.Rand) string {
@@ -133,8 +182,6 @@ func pick[T any](r *rand.Rand, xs []T) T {
 	return xs[r.IntN(len(xs))]
 }
 
-// pickKind returns a kind drawn from the cumulative distribution given
-// by the kindWeights slice. The numbers sum to 100.
 func pickKind(r *rand.Rand) string {
 	const total = 100
 	x := r.IntN(total)
@@ -148,21 +195,10 @@ func pickKind(r *rand.Rand) string {
 	return kindWeights[len(kindWeights)-1].kind
 }
 
-var kindWeights = []struct {
-	kind   string
-	weight int // out of 100
-}{
-	{fault.KindWarranty, 35},
-	{fault.KindOutOfWarranty, 20},
-	{fault.KindCustomerEducation, 15},
-	{fault.KindUnrelated, 15},
-	{fault.KindGoodwill, 10},
-	{fault.KindRecall, 5},
-}
-
 func main() {
 	count := flag.Int("count", 200, "number of cases to generate")
 	clean := flag.Bool("clean", false, "wipe events + projections first (dev only)")
+	skipMaster := flag.Bool("skip-master", false, "skip seeding users/dealers/rules (use when only re-seeding cases)")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
@@ -189,7 +225,7 @@ func main() {
 	defer pool.Close()
 
 	if *clean {
-		slog.Info("cleaning tables (dev)")
+		slog.Info("cleaning event log + projections (dev)")
 		_, err := pool.Exec(ctx, `
 			SET session_replication_role = replica;
 			TRUNCATE events, projection_cursors, projection_event_counts, current_cases;
@@ -201,13 +237,31 @@ func main() {
 		}
 	}
 
+	userRepo := user.NewRepo(pool)
+	dealerRepo := dealer.NewRepo(pool)
+	resolver := fault.NewPgResolver(pool)
+
+	if !*skipMaster {
+		slog.Info("seeding master data")
+		if err := seedMaster(ctx, userRepo, dealerRepo, resolver); err != nil {
+			slog.Error("master", "err", err)
+			os.Exit(1)
+		}
+	}
+
+	yan, err := userRepo.ByEmail(ctx, "yan@stele.local")
+	if err != nil {
+		slog.Error("resolve yan", "err", err)
+		os.Exit(1)
+	}
+
 	store := event.NewPostgresStore(pool)
 	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0xCAFEBABE))
 
 	start := time.Now()
 	totalEvents := 0
 	for i := 0; i < *count; i++ {
-		_, evs, err := generateCase(ctx, store, r)
+		_, evs, err := generateCase(ctx, store, resolver, yan.ID, r)
 		if err != nil {
 			slog.Error("generate", "i", i, "err", err)
 			os.Exit(1)
@@ -224,25 +278,60 @@ func main() {
 	)
 }
 
-// generateCase: open, 1-5 notes, 80% Classified, 90% Closed
-// (uniformly across the population; not all branches matter).
-func generateCase(ctx context.Context, store *event.PostgresStore, r *rand.Rand) (uuid.UUID, int, error) {
-	dealer := pick(r, dealers)
+func seedMaster(ctx context.Context, ur *user.Repo, dr *dealer.Repo, res *fault.PgResolver) error {
+	for _, u := range seedUsers {
+		if err := ur.Upsert(ctx, u); err != nil {
+			return fmt.Errorf("user %s: %w", u.Email, err)
+		}
+	}
+	for _, d := range seedDealers {
+		if err := dr.Upsert(ctx, d); err != nil {
+			return fmt.Errorf("dealer %s: %w", d.Code, err)
+		}
+	}
+	emailToID := map[string]uuid.UUID{}
+	for _, u := range seedUsers {
+		full, err := ur.ByEmail(ctx, u.Email)
+		if err != nil {
+			return fmt.Errorf("resolve %s: %w", u.Email, err)
+		}
+		emailToID[u.Email] = full.ID
+	}
+	for _, spec := range seedRules {
+		assignee, ok := emailToID[spec.Email]
+		if !ok {
+			return fmt.Errorf("rule '%s' references unknown user %s", spec.Name, spec.Email)
+		}
+		if err := res.UpsertRule(ctx, fault.Rule{
+			Name:              spec.Name,
+			Priority:          spec.Priority,
+			MatchFaultPrefix:  spec.Prefix,
+			MatchDealerRegion: spec.Region,
+			AssigneeID:        assignee,
+		}); err != nil {
+			return fmt.Errorf("rule '%s': %w", spec.Name, err)
+		}
+	}
+	return nil
+}
+
+func generateCase(ctx context.Context, store *event.PostgresStore, resolver fault.Resolver, openerID uuid.UUID, r *rand.Rand) (uuid.UUID, int, error) {
+	dealerCode := seedDealers[r.IntN(len(seedDealers))].Code
 	fc := pick(r, faultCodes)
 	desc := pick(r, descriptions)
 
-	id, err := fault.OpenCase(ctx, store, fault.CaseOpened{
-		Dealer: dealer, VIN: randomVIN(r), FaultCode: fc, Description: desc,
+	id, err := fault.OpenCase(ctx, store, resolver, openerID, fault.CaseOpened{
+		Dealer: dealerCode, VIN: randomVIN(r), FaultCode: fc, Description: desc,
 	})
 	if err != nil {
 		return uuid.Nil, 0, fmt.Errorf("open: %w", err)
 	}
-	events := 1
+	events := 2 // CaseOpened + CaseAssigned auto-emitted
 
 	noteCount := 1 + r.IntN(5)
 	for i := 0; i < noteCount; i++ {
 		err := fault.AddNote(ctx, store, id, fault.NoteAdded{
-			Author: pick(r, authors),
+			Author: pick(r, noteAuthors),
 			Text:   pick(r, noteSnippets),
 		})
 		if err != nil {
@@ -251,13 +340,10 @@ func generateCase(ctx context.Context, store *event.PostgresStore, r *rand.Rand)
 		events++
 	}
 
-	classify := r.Float64() < 0.80
-	var lastKind string
-	if classify {
-		lastKind = pickKind(r)
+	if r.Float64() < 0.80 {
+		k := pickKind(r)
 		err := fault.Classify(ctx, store, id, fault.Classified{
-			Kind:      lastKind,
-			Reasoning: pick(r, reasoningByKind[lastKind]),
+			Kind: k, Reasoning: pick(r, reasoningByKind[k]),
 		})
 		if err != nil {
 			return id, events, fmt.Errorf("classify: %w", err)
@@ -268,7 +354,7 @@ func generateCase(ctx context.Context, store *event.PostgresStore, r *rand.Rand)
 	if r.Float64() < 0.90 {
 		err := fault.CloseCase(ctx, store, id, fault.CaseClosed{
 			Resolution: pick(r, resolutions),
-			ClosedBy:   pick(r, authors),
+			ClosedBy:   pick(r, noteAuthors),
 		})
 		if err != nil {
 			return id, events, fmt.Errorf("close: %w", err)

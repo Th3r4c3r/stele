@@ -13,7 +13,7 @@ import (
 type CaseRow struct {
 	ID            uuid.UUID
 	Status        string
-	Kind          *string // null when not classified yet
+	Kind          *string
 	Dealer        string
 	VIN           string
 	FaultCode     string
@@ -23,6 +23,14 @@ type CaseRow struct {
 	ClosedAt      *time.Time
 	LastUpdate    time.Time
 	NoteCount     int
+	AssigneeID    *uuid.UUID
+	AssigneeName  string // resolved by the handler ("Mario Bossi") or "" if not assigned
+}
+
+// UserOption is a (id, label) pair for transfer dropdowns.
+type UserOption struct {
+	ID    uuid.UUID
+	Label string
 }
 
 // TimelineEntry is one row of the per-case event timeline.
@@ -32,43 +40,67 @@ type TimelineEntry struct {
 	Summary string
 }
 
-// CasesListPage renders the index with three tabs and a kind filter.
-templ CasesListPage(triage []CaseRow, classified []CaseRow, closed []CaseRow, activeTab string, kindFilter string) {
+// CasesListPage renders the index with four tabs and a kind filter.
+templ CasesListPage(
+	triage []CaseRow,
+	classified []CaseRow,
+	closed []CaseRow,
+	mine []CaseRow,
+	activeTab string,
+	kindFilter string,
+	currentUserName string,
+) {
 	@Layout("Cases") {
-		@CasesListBody(triage, classified, closed, activeTab, kindFilter)
+		@CasesListBody(triage, classified, closed, mine, activeTab, kindFilter, currentUserName)
 	}
 }
 
-templ CasesListBody(triage []CaseRow, classified []CaseRow, closed []CaseRow, activeTab string, kindFilter string) {
+templ CasesListBody(
+	triage []CaseRow,
+	classified []CaseRow,
+	closed []CaseRow,
+	mine []CaseRow,
+	activeTab string,
+	kindFilter string,
+	currentUserName string,
+) {
 	<section class="page-head">
 		<h1>Fault cases</h1>
 		<a class="btn primary" href="/cases/new">New case</a>
 	</section>
 	<nav class="tabs">
+		@tab("/cases?tab=mine", "My cases", len(mine), activeTab == "mine")
 		@tab("/cases?tab=triage", "Triage", len(triage), activeTab == "triage")
 		@tab("/cases?tab=classified", "Classified", len(classified), activeTab == "classified")
 		@tab("/cases?tab=closed", "Closed", len(closed), activeTab == "closed")
 	</nav>
 	switch activeTab {
+		case "mine":
+			<p class="muted">Cases assigned to { currentUserName }.</p>
+			if len(mine) == 0 {
+				<p class="muted">Nothing assigned to you.</p>
+			} else {
+				@casesTable(mine, true, false)
+			}
 		case "triage":
 			if len(triage) == 0 {
 				<p class="muted">No cases in triage.</p>
 			} else {
-				@casesTable(triage, false)
+				@casesTable(triage, false, true)
 			}
 		case "classified":
-			@kindFilterChips(kindFilter)
+			@kindFilterChips(kindFilter, "classified")
 			if len(classified) == 0 {
 				<p class="muted">No classified cases match.</p>
 			} else {
-				@casesTable(classified, true)
+				@casesTable(classified, true, true)
 			}
 		case "closed":
-			@kindFilterChips(kindFilter)
+			@kindFilterChips(kindFilter, "closed")
 			if len(closed) == 0 {
 				<p class="muted">No closed cases yet.</p>
 			} else {
-				@casesTable(closed, true)
+				@casesTable(closed, true, true)
 			}
 	}
 }
@@ -81,25 +113,25 @@ templ tab(href string, label string, count int, active bool) {
 	}
 }
 
-templ kindFilterChips(active string) {
+templ kindFilterChips(active string, tabName string) {
 	<div class="kindfilter">
 		<span class="muted">Filter:</span>
-		@kindChip("", "All", active == "")
+		@kindChip("", "All", active == "", tabName)
 		for _, k := range fault.AllKinds {
-			@kindChip(k, kindLabel(k), active == k)
+			@kindChip(k, kindLabel(k), active == k, tabName)
 		}
 	</div>
 }
 
-templ kindChip(value string, label string, active bool) {
+templ kindChip(value string, label string, active bool, tabName string) {
 	if active {
-		<a class="chip active" href={ templ.URL(kindChipHref(value)) }>{ label }</a>
+		<a class="chip active" href={ templ.URL(kindChipHref(value, tabName)) }>{ label }</a>
 	} else {
-		<a class="chip" href={ templ.URL(kindChipHref(value)) }>{ label }</a>
+		<a class="chip" href={ templ.URL(kindChipHref(value, tabName)) }>{ label }</a>
 	}
 }
 
-templ casesTable(rows []CaseRow, withKind bool) {
+templ casesTable(rows []CaseRow, withKind bool, withAssignee bool) {
 	<table class="claims">
 		<thead>
 			<tr>
@@ -109,6 +141,9 @@ templ casesTable(rows []CaseRow, withKind bool) {
 				<th>Fault</th>
 				if withKind {
 					<th>Kind</th>
+				}
+				if withAssignee {
+					<th>Assignee</th>
 				}
 				<th>Notes</th>
 				<th></th>
@@ -127,6 +162,15 @@ templ casesTable(rows []CaseRow, withKind bool) {
 								@kindBadge(*c.Kind)
 							} else {
 								<span class="muted">—</span>
+							}
+						</td>
+					}
+					if withAssignee {
+						<td>
+							if c.AssigneeName != "" {
+								{ c.AssigneeName }
+							} else {
+								<span class="muted">unassigned</span>
 							}
 						</td>
 					}
@@ -202,13 +246,13 @@ templ NewCaseForm(data NewCaseFormData) {
 }
 
 // CaseDetailPage renders a single case with its event timeline.
-templ CaseDetailPage(c CaseRow, timeline []TimelineEntry) {
+templ CaseDetailPage(c CaseRow, timeline []TimelineEntry, users []UserOption) {
 	@Layout("Case " + c.ID.String()[:8]) {
-		@CaseDetailBody(c, timeline)
+		@CaseDetailBody(c, timeline, users)
 	}
 }
 
-templ CaseDetailBody(c CaseRow, timeline []TimelineEntry) {
+templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption) {
 	<section class="page-head">
 		<h1>Case <span class="muted">{ c.ID.String()[:8] }</span></h1>
 		<a href="/cases" class="btn">Back to list</a>
@@ -219,6 +263,10 @@ templ CaseDetailBody(c CaseRow, timeline []TimelineEntry) {
 		@CaseTimeline(timeline)
 	</section>
 	if c.Status != "closed" {
+		<section>
+			<h2>Transfer to another user</h2>
+			@TransferForm(c.ID, c.AssigneeID, users, TransferFormData{})
+		</section>
 		<section>
 			<h2>Add a note</h2>
 			@NoteForm(c.ID, NoteFormData{})
@@ -257,6 +305,14 @@ templ caseSummary(c CaseRow) {
 			<dt>Kind</dt>
 			<dd>@kindBadge(*c.Kind)</dd>
 		}
+		<dt>Assignee</dt>
+		<dd>
+			if c.AssigneeName != "" {
+				<strong>{ c.AssigneeName }</strong>
+			} else {
+				<span class="muted">unassigned</span>
+			}
+		</dd>
 		<dt>Dealer</dt><dd>{ c.Dealer }</dd>
 		<dt>VIN</dt><dd><code>{ c.VIN }</code></dd>
 		<dt>Fault code</dt><dd>{ c.FaultCode }</dd>
@@ -367,5 +423,31 @@ templ CloseForm(caseID uuid.UUID, data CloseFormData) {
 			<input name="closed_by" value={ data.ClosedBy } placeholder="your name"/>
 		</label>
 		<button type="submit" class="btn danger">Close case</button>
+	</form>
+}
+
+type TransferFormData struct {
+	ErrorMsg string
+}
+
+templ TransferForm(caseID uuid.UUID, currentAssignee *uuid.UUID, users []UserOption, data TransferFormData) {
+	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/transfer") } class="form inline">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		<label>
+			New assignee
+			<select name="assignee_id" required>
+				<option value="">— pick one —</option>
+				for _, u := range users {
+					if currentAssignee != nil && u.ID == *currentAssignee {
+						<option value={ u.ID.String() } disabled>{ u.Label } (current)</option>
+					} else {
+						<option value={ u.ID.String() }>{ u.Label }</option>
+					}
+				}
+			</select>
+		</label>
+		<button type="submit" class="btn">Transfer</button>
 	</form>
 }

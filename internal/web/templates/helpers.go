@@ -27,12 +27,15 @@ func kindLabel(k string) string {
 }
 
 // kindChipHref builds the /cases href that selects a kind filter on
-// the active classified/closed tab. Empty value = "all kinds".
-func kindChipHref(value string) string {
-	if value == "" {
-		return "/cases?tab=classified"
+// the active tab. Empty value = "all kinds" on the same tab.
+func kindChipHref(value string, tab string) string {
+	if tab == "" {
+		tab = "classified"
 	}
-	return "/cases?tab=classified&kind=" + value
+	if value == "" {
+		return "/cases?tab=" + tab
+	}
+	return "/cases?tab=" + tab + "&kind=" + value
 }
 
 // derefStr returns *s or "" if nil. Useful inside templates.

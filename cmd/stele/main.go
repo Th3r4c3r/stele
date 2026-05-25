@@ -22,6 +22,7 @@ import (
 	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/migrate"
 	"github.com/Th3r4c3r/stele/internal/projection"
+	userpkg "github.com/Th3r4c3r/stele/internal/user"
 	"github.com/Th3r4c3r/stele/internal/web"
 	"github.com/Th3r4c3r/stele/migrations"
 )
@@ -91,9 +92,18 @@ func runServer() int {
 	runnerWG := runner.Start(ctx)
 	slog.Info("projection runner started", "projectors", runner.Names())
 
+	userRepo := userpkg.NewRepo(pool)
+	resolver := fault.NewPgResolver(pool)
+	currentUserMW, err := web.NewCurrentUserMiddleware(ctx, userRepo)
+	if err != nil {
+		slog.Error("current-user middleware", "err", err,
+			"hint", "ensure STELE_DEFAULT_USER_EMAIL maps to a seeded user (run stele-seed first)")
+		return 1
+	}
+
 	mux := http.NewServeMux()
-	// Warranty UI (/, /claims/...) plus static assets.
-	web.Mount(mux, pool, store)
+	// Fault-case UI + static assets, wrapped in the current-user injector.
+	web.Mount(mux, pool, store, resolver, userRepo, currentUserMW)
 	// Operational + debug endpoints retained from M1.
 	mux.HandleFunc("GET /healthz", healthzHandler(pool))
 	mux.HandleFunc("POST /debug/event", appendDebugEvent(store))

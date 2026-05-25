@@ -25,6 +25,8 @@ func applyCurrentCases(ctx context.Context, tx pgx.Tx, ev event.Event) error {
 	switch ev.Type {
 	case EventCaseOpened:
 		return applyCaseOpened(ctx, tx, ev)
+	case EventCaseAssigned:
+		return applyCaseAssigned(ctx, tx, ev)
 	case EventNoteAdded:
 		return applyNoteAdded(ctx, tx, ev)
 	case EventClassified:
@@ -105,6 +107,26 @@ func applyClassified(ctx context.Context, tx pgx.Tx, ev event.Event) error {
 	_, err = tx.Exec(ctx, q, ev.AggregateID, ev.OccurredAt, ev.ID, v.Kind)
 	if err != nil {
 		return fmt.Errorf("applyClassified: %w", err)
+	}
+	return nil
+}
+
+func applyCaseAssigned(ctx context.Context, tx pgx.Tx, ev event.Event) error {
+	v, err := decodeAs[CaseAssigned](EventCaseAssigned, ev.Payload)
+	if err != nil {
+		return err
+	}
+	const q = `
+		UPDATE current_cases
+		   SET assignee_id   = $4,
+		       last_update   = $2,
+		       last_event_id = $3
+		 WHERE id = $1
+		   AND last_event_id < $3
+	`
+	_, err = tx.Exec(ctx, q, ev.AggregateID, ev.OccurredAt, ev.ID, v.AssigneeID)
+	if err != nil {
+		return fmt.Errorf("applyCaseAssigned: %w", err)
 	}
 	return nil
 }

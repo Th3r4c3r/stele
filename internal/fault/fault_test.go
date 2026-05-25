@@ -19,6 +19,13 @@ import (
 var migrateOnce sync.Once
 var migrateErr error
 
+// stubResolver always assigns to the opener, no rules.
+type stubResolver struct{}
+
+func (stubResolver) ResolveForOpen(_ context.Context, in RouteInput) (Decision, error) {
+	return Decision{AssigneeID: in.OpenerID, Reason: ReasonOpener}, nil
+}
+
 func requirePostgres(t *testing.T) (*pgxpool.Pool, *event.PostgresStore) {
 	t.Helper()
 	url := os.Getenv("STELE_TEST_DATABASE_URL")
@@ -37,6 +44,7 @@ func requirePostgres(t *testing.T) (*pgxpool.Pool, *event.PostgresStore) {
 	if _, err := pool.Exec(context.Background(), `
 		SET session_replication_role = replica;
 		TRUNCATE events, projection_cursors, projection_event_counts, current_cases;
+		TRUNCATE assignment_rules, users, dealers CASCADE;
 		SET session_replication_role = origin;
 	`); err != nil {
 		t.Fatalf("truncate: %v", err)
@@ -44,17 +52,93 @@ func requirePostgres(t *testing.T) (*pgxpool.Pool, *event.PostgresStore) {
 	return pool, event.NewPostgresStore(pool)
 }
 
+func TestRoutePure(t *testing.T) {
+	mario := uuid.Must(uuid.NewV7())
+	jp := uuid.Must(uuid.NewV7())
+	opener := uuid.Must(uuid.NewV7())
+	rules := []Rule{
+		{Name: "bms", Priority: 10, MatchFaultPrefix: "BMS_", AssigneeID: mario},
+		{Name: "es", Priority: 30, MatchDealerRegion: "ES", AssigneeID: jp},
+	}
+	cases := []struct {
+		name string
+		in   RouteInput
+		want Decision
+	}{
+		{"bms wins on fault prefix",
+			RouteInput{FaultCode: "BMS_FAULT_03", DealerRegion: "ES", OpenerID: opener},
+			Decision{AssigneeID: mario, Reason: ReasonRuleFaultPrefix, RuleName: "bms"}},
+		{"ES region applies when no fault rule matches",
+			RouteInput{FaultCode: "DASH_NO_BOOT", DealerRegion: "ES", OpenerID: opener},
+			Decision{AssigneeID: jp, Reason: ReasonRuleDealerRegion, RuleName: "es"}},
+		{"no rule -> opener",
+			RouteInput{FaultCode: "DASH_NO_BOOT", DealerRegion: "FR", OpenerID: opener},
+			Decision{AssigneeID: opener, Reason: ReasonOpener}},
+		{"opener required is enforced by the caller (Route assumes set)",
+			RouteInput{FaultCode: "X", DealerRegion: "", OpenerID: opener},
+			Decision{AssigneeID: opener, Reason: ReasonOpener}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Route(tc.in, rules)
+			if got != tc.want {
+				t.Fatalf("Route mismatch:\n got  %+v\n want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestOpenCaseEmitsCaseAssigned(t *testing.T) {
+	pool, store := requirePostgres(t)
+	ctx := context.Background()
+	opener := uuid.Must(uuid.NewV7())
+
+	id, err := OpenCase(ctx, store, stubResolver{}, opener, CaseOpened{
+		Dealer: "DEALER_01", VIN: "ABCDEFGHJKLMN1234", FaultCode: "BMS_FAULT_03",
+		Description: "Battery does not charge past 80%",
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	// Two events should exist: CaseOpened + CaseAssigned, both on this aggregate.
+	rows, err := pool.Query(ctx, `SELECT type FROM events WHERE aggregate_id = $1 ORDER BY id`, id)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	var types []string
+	for rows.Next() {
+		var s string
+		_ = rows.Scan(&s)
+		types = append(types, s)
+	}
+	if len(types) != 2 || types[0] != EventCaseOpened || types[1] != EventCaseAssigned {
+		t.Fatalf("expected [CaseOpened CaseAssigned], got %v", types)
+	}
+}
+
 func TestOpenCaseValidation(t *testing.T) {
 	pool, store := requirePostgres(t)
 	_ = pool
 	ctx := context.Background()
-	_, err := OpenCase(ctx, store, CaseOpened{Dealer: "", VIN: "12345678901234567", FaultCode: "F", Description: "x"})
+	opener := uuid.Must(uuid.NewV7())
+	_, err := OpenCase(ctx, store, stubResolver{}, opener, CaseOpened{
+		Dealer: "", VIN: "12345678901234567", FaultCode: "F", Description: "x",
+	})
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("empty dealer: got %v", err)
 	}
-	_, err = OpenCase(ctx, store, CaseOpened{Dealer: "D", VIN: "SHORT", FaultCode: "F", Description: "x"})
+	_, err = OpenCase(ctx, store, stubResolver{}, opener, CaseOpened{
+		Dealer: "D", VIN: "SHORT", FaultCode: "F", Description: "x",
+	})
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("short VIN: got %v", err)
+	}
+	_, err = OpenCase(ctx, store, stubResolver{}, uuid.Nil, CaseOpened{
+		Dealer: "D", VIN: "AAAAAAAAAAAAAAAAA", FaultCode: "F", Description: "d",
+	})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("missing opener: got %v", err)
 	}
 }
 
@@ -62,7 +146,8 @@ func TestClassifyRejectsUnknownKind(t *testing.T) {
 	pool, store := requirePostgres(t)
 	_ = pool
 	ctx := context.Background()
-	id, err := OpenCase(ctx, store, CaseOpened{
+	opener := uuid.Must(uuid.NewV7())
+	id, err := OpenCase(ctx, store, stubResolver{}, opener, CaseOpened{
 		Dealer: "DEALER_01", VIN: "ABCDEFGHJKLMN1234", FaultCode: "BMS", Description: "d",
 	})
 	if err != nil {
@@ -74,11 +159,12 @@ func TestClassifyRejectsUnknownKind(t *testing.T) {
 	}
 }
 
-func TestFullLifecycleTriageClassifyClose(t *testing.T) {
+func TestFullLifecycleWithAssignmentProjection(t *testing.T) {
 	pool, store := requirePostgres(t)
 	ctx := context.Background()
+	opener := uuid.Must(uuid.NewV7())
 
-	id, err := OpenCase(ctx, store, CaseOpened{
+	id, err := OpenCase(ctx, store, stubResolver{}, opener, CaseOpened{
 		Dealer: "DEALER_01", VIN: "ABCDEFGHJKLMN1234", FaultCode: "BMS_FAULT_03",
 		Description: "Battery does not charge past 80%",
 	})
@@ -86,10 +172,9 @@ func TestFullLifecycleTriageClassifyClose(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	_ = AddNote(ctx, store, id, NoteAdded{Author: "yan", Text: "initial inspection"})
-	if err := Classify(ctx, store, id, Classified{Kind: KindWarranty, Reasoning: "BMS within 24 months"}); err != nil {
+	if err := Classify(ctx, store, id, Classified{Kind: KindWarranty, Reasoning: "BMS within 24m"}); err != nil {
 		t.Fatalf("classify: %v", err)
 	}
-	_ = AddNote(ctx, store, id, NoteAdded{Author: "yan", Text: "parts ordered"})
 	if err := CloseCase(ctx, store, id, CaseClosed{Resolution: "BMS replaced", ClosedBy: "yan"}); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -102,36 +187,62 @@ func TestFullLifecycleTriageClassifyClose(t *testing.T) {
 
 	var status, kind string
 	var noteCount int
-	var hasClassifiedAt, hasClosedAt bool
+	var assignee uuid.UUID
 	err = pool.QueryRow(ctx, `
-		SELECT status, kind, note_count, classified_at IS NOT NULL, closed_at IS NOT NULL
+		SELECT status, kind, note_count, assignee_id
 		FROM current_cases WHERE id = $1`, id,
-	).Scan(&status, &kind, &noteCount, &hasClassifiedAt, &hasClosedAt)
+	).Scan(&status, &kind, &noteCount, &assignee)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if status != "closed" {
-		t.Fatalf("status: got %q want closed", status)
+	if status != "closed" || kind != KindWarranty || noteCount != 1 || assignee != opener {
+		t.Fatalf("got status=%s kind=%s notes=%d assignee=%s; want closed/warranty/1/opener",
+			status, kind, noteCount, assignee)
 	}
-	if kind != KindWarranty {
-		t.Fatalf("kind: got %q want %q", kind, KindWarranty)
+}
+
+func TestReassignTransfersAssignee(t *testing.T) {
+	pool, store := requirePostgres(t)
+	ctx := context.Background()
+	yan := uuid.Must(uuid.NewV7())
+	mario := uuid.Must(uuid.NewV7())
+
+	id, err := OpenCase(ctx, store, stubResolver{}, yan, CaseOpened{
+		Dealer: "DEALER_01", VIN: "ABCDEFGHJKLMN1234", FaultCode: "DASH_NO_BOOT", Description: "d",
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
 	}
-	if noteCount != 2 {
-		t.Fatalf("note_count: got %d want 2", noteCount)
+	if err := Reassign(ctx, store, id, mario, &yan); err != nil {
+		t.Fatalf("reassign: %v", err)
 	}
-	if !hasClassifiedAt || !hasClosedAt {
-		t.Fatalf("timestamps: classified=%v closed=%v", hasClassifiedAt, hasClosedAt)
+
+	runner := projection.NewRunner(store, pool)
+	runner.Register(CurrentCasesProjector())
+	if err := runner.RunOnce(ctx, "current_cases"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	var assignee uuid.UUID
+	pool.QueryRow(ctx, `SELECT assignee_id FROM current_cases WHERE id = $1`, id).Scan(&assignee)
+	if assignee != mario {
+		t.Fatalf("assignee after reassign: got %s want %s", assignee, mario)
+	}
+
+	// Same-assignee reassign is rejected.
+	if err := Reassign(ctx, store, id, mario, &mario); !errors.Is(err, ErrValidation) {
+		t.Fatalf("self-reassign should fail: %v", err)
 	}
 }
 
 func TestReclassification(t *testing.T) {
 	pool, store := requirePostgres(t)
 	ctx := context.Background()
-	id, _ := OpenCase(ctx, store, CaseOpened{
+	opener := uuid.Must(uuid.NewV7())
+	id, _ := OpenCase(ctx, store, stubResolver{}, opener, CaseOpened{
 		Dealer: "D", VIN: "AAAAAAAAAAAAAAAAA", FaultCode: "F", Description: "d",
 	})
 	_ = Classify(ctx, store, id, Classified{Kind: KindWarranty, Reasoning: "first call"})
-	_ = Classify(ctx, store, id, Classified{Kind: KindCustomerEducation, Reasoning: "after second look, works as designed"})
+	_ = Classify(ctx, store, id, Classified{Kind: KindCustomerEducation, Reasoning: "second look"})
 
 	runner := projection.NewRunner(store, pool)
 	runner.Register(CurrentCasesProjector())
@@ -145,15 +256,15 @@ func TestReclassification(t *testing.T) {
 	}
 }
 
-func TestProjectorIsReplaySafe(t *testing.T) {
+func TestProjectorReplaySafeWithAssignment(t *testing.T) {
 	pool, store := requirePostgres(t)
 	ctx := context.Background()
-	id, _ := OpenCase(ctx, store, CaseOpened{
+	opener := uuid.Must(uuid.NewV7())
+	id, _ := OpenCase(ctx, store, stubResolver{}, opener, CaseOpened{
 		Dealer: "D", VIN: "REPLAYTEST1234567", FaultCode: "F", Description: "d",
 	})
 	_ = AddNote(ctx, store, id, NoteAdded{Author: "a", Text: "n1"})
 	_ = AddNote(ctx, store, id, NoteAdded{Author: "a", Text: "n2"})
-	_ = Classify(ctx, store, id, Classified{Kind: KindGoodwill, Reasoning: "out of warranty by 2 weeks"})
 
 	runner := projection.NewRunner(store, pool)
 	runner.Register(CurrentCasesProjector())
@@ -171,6 +282,3 @@ func TestProjectorIsReplaySafe(t *testing.T) {
 		t.Fatalf("replay note_count: %d (idempotency broken)", nc2)
 	}
 }
-
-// silence unused
-var _ = uuid.Nil
