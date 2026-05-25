@@ -38,6 +38,18 @@ func kindChipHref(value string, tab string) string {
 	return "/cases?tab=" + tab + "&kind=" + value
 }
 
+// assigneeChipHref builds the /cases href that selects an assignee
+// filter on the active tab. Empty value = "all assignees".
+func assigneeChipHref(value string, tab string) string {
+	if tab == "" {
+		tab = "triage"
+	}
+	if value == "" {
+		return "/cases?tab=" + tab
+	}
+	return "/cases?tab=" + tab + "&assignee=" + value
+}
+
 // derefStr returns *s or "" if nil. Useful inside templates.
 func derefStr(s *string) string {
 	if s == nil {

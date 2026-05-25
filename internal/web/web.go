@@ -98,19 +98,45 @@ func (h *handlers) listCases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	triageRows, err := h.queryCases(r.Context(), "triage", "", uuid.Nil)
+	// assignee filter: "" / "all" / "<uuid>" / "unassigned" (mapped to the
+	// configured opener-fallback user, i.e., the ops generalist).
+	// The filter applies only on triage/classified/closed (not on "mine",
+	// which is already an assignee filter).
+	assigneeParam := r.URL.Query().Get("assignee")
+	var assigneeFilter uuid.UUID
+	if tab != "mine" {
+		switch assigneeParam {
+		case "", "all":
+			// no extra filter
+		case "unassigned":
+			// "Unassigned" = ops-generalist (the default opener). Pragmatic
+			// definition: cases that no specialist rule grabbed.
+			if opsGen, err := h.users.ByEmail(r.Context(), "yan@stele.local"); err == nil {
+				assigneeFilter = opsGen.ID
+			}
+		default:
+			if id, err := uuid.Parse(assigneeParam); err == nil {
+				assigneeFilter = id
+			}
+		}
+	}
+
+	triageRows, err := h.queryCases(r.Context(), "triage", "",
+		ifThenUUID(tab == "triage", assigneeFilter))
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
 	classifiedRows, err := h.queryCases(r.Context(), "classified",
-		ifThen(tab == "classified", kindFilter, ""), uuid.Nil)
+		ifThen(tab == "classified", kindFilter, ""),
+		ifThenUUID(tab == "classified", assigneeFilter))
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
 	closedRows, err := h.queryCases(r.Context(), "closed",
-		ifThen(tab == "closed", kindFilter, ""), uuid.Nil)
+		ifThen(tab == "closed", kindFilter, ""),
+		ifThenUUID(tab == "closed", assigneeFilter))
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -121,16 +147,28 @@ func (h *handlers) listCases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hydrate assignee names in one extra query (small set, no JOIN).
 	if err := h.hydrateAssignees(r.Context(),
 		triageRows, classifiedRows, closedRows, mineRows); err != nil {
 		httpErr(w, err)
 		return
 	}
 
+	userOpts, err := h.userOptions(r.Context())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = templates.CasesListPage(triageRows, classifiedRows, closedRows, mineRows,
-		tab, kindFilter, currentUser.Name).Render(r.Context(), w)
+		tab, kindFilter, assigneeParam, userOpts, currentUser.Name).Render(r.Context(), w)
+}
+
+func ifThenUUID(cond bool, v uuid.UUID) uuid.UUID {
+	if cond {
+		return v
+	}
+	return uuid.Nil
 }
 
 func ifThen(cond bool, a, b string) string {
@@ -351,26 +389,28 @@ func (h *handlers) transferCase(w http.ResponseWriter, r *http.Request) {
 
 // --- queries ---
 
-// queryCases returns the rows in the given status. If kindFilter is
-// non-empty, only rows with that kind are returned. If assigneeOnly is
-// non-zero, ignores status and filters by assignee.
-func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, assigneeOnly uuid.UUID) ([]templates.CaseRow, error) {
+// queryCases returns the rows in the given status, optionally narrowed
+// by kindFilter and/or assigneeFilter. If status is empty AND
+// assigneeFilter is set, it acts as the "my cases" lookup (no status
+// constraint).
+func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, assigneeFilter uuid.UUID) ([]templates.CaseRow, error) {
 	args := []any{}
 	q := `
 		SELECT id, status, kind, dealer, vin, fault_code, description,
 		       opened_at, classified_at, closed_at, last_update, note_count, assignee_id
 		FROM current_cases
 		WHERE 1=1`
-	if assigneeOnly != uuid.Nil {
-		args = append(args, assigneeOnly)
-		q += fmt.Sprintf(" AND assignee_id = $%d", len(args))
-	} else {
+	if status != "" {
 		args = append(args, status)
 		q += fmt.Sprintf(" AND status = $%d", len(args))
-		if kindFilter != "" {
-			args = append(args, kindFilter)
-			q += fmt.Sprintf(" AND kind = $%d", len(args))
-		}
+	}
+	if kindFilter != "" {
+		args = append(args, kindFilter)
+		q += fmt.Sprintf(" AND kind = $%d", len(args))
+	}
+	if assigneeFilter != uuid.Nil {
+		args = append(args, assigneeFilter)
+		q += fmt.Sprintf(" AND assignee_id = $%d", len(args))
 	}
 	q += ` ORDER BY opened_at DESC`
 	rows, err := h.pool.Query(ctx, q, args...)

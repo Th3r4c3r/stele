@@ -40,7 +40,8 @@ type TimelineEntry struct {
 	Summary string
 }
 
-// CasesListPage renders the index with four tabs and a kind filter.
+// CasesListPage renders the index with four tabs, kind filter (on
+// classified+closed) and assignee filter (on every status tab).
 templ CasesListPage(
 	triage []CaseRow,
 	classified []CaseRow,
@@ -48,10 +49,12 @@ templ CasesListPage(
 	mine []CaseRow,
 	activeTab string,
 	kindFilter string,
+	assigneeFilter string,
+	users []UserOption,
 	currentUserName string,
 ) {
 	@Layout("Cases") {
-		@CasesListBody(triage, classified, closed, mine, activeTab, kindFilter, currentUserName)
+		@CasesListBody(triage, classified, closed, mine, activeTab, kindFilter, assigneeFilter, users, currentUserName)
 	}
 }
 
@@ -62,6 +65,8 @@ templ CasesListBody(
 	mine []CaseRow,
 	activeTab string,
 	kindFilter string,
+	assigneeFilter string,
+	users []UserOption,
 	currentUserName string,
 ) {
 	<section class="page-head">
@@ -83,13 +88,15 @@ templ CasesListBody(
 				@casesTable(mine, true, false)
 			}
 		case "triage":
+			@assigneeFilterChips(assigneeFilter, "triage", users)
 			if len(triage) == 0 {
-				<p class="muted">No cases in triage.</p>
+				<p class="muted">No cases match.</p>
 			} else {
 				@casesTable(triage, false, true)
 			}
 		case "classified":
 			@kindFilterChips(kindFilter, "classified")
+			@assigneeFilterChips(assigneeFilter, "classified", users)
 			if len(classified) == 0 {
 				<p class="muted">No classified cases match.</p>
 			} else {
@@ -97,11 +104,34 @@ templ CasesListBody(
 			}
 		case "closed":
 			@kindFilterChips(kindFilter, "closed")
+			@assigneeFilterChips(assigneeFilter, "closed", users)
 			if len(closed) == 0 {
 				<p class="muted">No closed cases yet.</p>
 			} else {
 				@casesTable(closed, true, true)
 			}
+	}
+}
+
+// assigneeFilterChips renders the assignee chip set for a status tab.
+// "All" / "Unassigned" (= ops generalist by convention, see ADR-008 follow-up)
+// / one chip per user.
+templ assigneeFilterChips(active string, tabName string, users []UserOption) {
+	<div class="kindfilter">
+		<span class="muted">Assignee:</span>
+		@assigneeChip("", "All", active == "" || active == "all", tabName)
+		@assigneeChip("unassigned", "Ops inbox", active == "unassigned", tabName)
+		for _, u := range users {
+			@assigneeChip(u.ID.String(), u.Label, active == u.ID.String(), tabName)
+		}
+	</div>
+}
+
+templ assigneeChip(value string, label string, active bool, tabName string) {
+	if active {
+		<a class="chip active" href={ templ.URL(assigneeChipHref(value, tabName)) }>{ label }</a>
+	} else {
+		<a class="chip" href={ templ.URL(assigneeChipHref(value, tabName)) }>{ label }</a>
 	}
 }
 
