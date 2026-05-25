@@ -44,7 +44,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(" — Stele</title><link rel=\"stylesheet\" href=\"/static/stele.css\"><script src=\"/static/htmx.min.js\" defer></script></head><body><header class=\"topbar\"><a class=\"brand\" href=\"/\">Stele</a><nav><a href=\"/claims\">Claims</a></nav></header><main>")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(" — Stele</title><link rel=\"stylesheet\" href=\"/static/stele.css\"><script src=\"/static/htmx.min.js\" defer></script></head><body><header class=\"topbar\"><a class=\"brand\" href=\"/\">Stele</a><nav><a href=\"/cases\">Cases</a></nav></header><main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -52,7 +52,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</main><footer class=\"footer\"><small>Stele &middot; warranty management on event sourcing</small></footer></body></html>")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</main><footer class=\"footer\"><small>Stele &middot; aftersales fault tracking on event sourcing</small></footer></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
