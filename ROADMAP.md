@@ -22,11 +22,15 @@ runs on the Hetzner instance at a URL Yan can open.
 - Integration tests over synthetic streams, replay idempotency, cursor advance. ✅
 - Endpoints live: `/debug/projections`, plus existing `/debug/event[s]`.
 
-## M2 — Warranty domain
-- Aggregate: `Claim`. Events: `ClaimOpened`, `ClaimUpdated`, `ClaimClosed`, `NoteAdded`.
-- Projection: `current_claims` (status, owner, last_update).
-- UI: list claims, open claim, add note, close.
-- Synthetic dataset: 200 fake claims over 18 months.
+## M2 — Warranty domain (DONE 2026-05-25)
+- Aggregate: `Claim`. Events: `ClaimOpened`, `NoteAdded`, `ClaimClosed`. ✅
+  (`ClaimUpdated` dropped per ADR-005 D2: events are facts, not generic updates.)
+- Projection: `current_claims` (status, dealer, vin, fault_code, note_count, ...). ✅
+- UI: HTMX + Templ at `/claims`. List, new form, detail with timeline,
+  add-note (HTMX fragment swap), close. ✅
+- Synthetic dataset: `cmd/seed -count 200` (982 events in 653ms). ✅
+- Backup: nightly `pg_dump` at 03:30, 7-day rotation. ✅
+- Live: 200 claims (178 closed / 22 open) seeded at https://stele.178-105-44-164.nip.io/claims
 
 ## M3 — Documents
 - Attach PDF to a claim via event.
