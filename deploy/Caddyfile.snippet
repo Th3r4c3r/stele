@@ -1,0 +1,21 @@
+# Stele Caddyfile snippet. Append to the existing Odoo Caddyfile on the
+# Hetzner host at ~/odoo/caddy/Caddyfile, then `docker compose restart caddy`
+# from ~/odoo/.
+#
+# The Stele app container joins the existing `odoo_internal` Docker network so
+# Caddy can resolve `stele-app` by DNS. No new ports are opened on the host.
+
+stele.178-105-44-164.sslip.io {
+	encode zstd gzip
+
+	reverse_proxy stele-app:8080 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

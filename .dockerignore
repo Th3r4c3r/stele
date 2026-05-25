@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+.vscode
+docs
+deploy
+*.md
+LICENSE
+.env
+.env.*
+coverage.out

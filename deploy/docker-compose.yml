@@ -1,0 +1,54 @@
+# Stele deployment. Shares the Hetzner host with the Odoo stack.
+#
+# Networking model:
+#   - `stele` network: app <-> db, private.
+#   - `odoo_internal` (external): allows the existing Odoo Caddy to reach stele-app
+#     via DNS name `stele-app:8080`. The Stele DB never joins this network.
+
+services:
+  app:
+    image: stele:${STELE_VERSION:-dev}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${STELE_VERSION:-dev}
+    container_name: stele-app
+    restart: unless-stopped
+    environment:
+      STELE_ADDR: ":8080"
+      STELE_VERSION: ${STELE_VERSION:-dev}
+      STELE_DATABASE_URL: postgres://stele:${STELE_DB_PASSWORD}@db:5432/stele?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - stele
+      - odoo_internal
+
+  db:
+    image: postgres:16-alpine
+    container_name: stele-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stele
+      POSTGRES_PASSWORD: ${STELE_DB_PASSWORD}
+      POSTGRES_DB: stele
+    volumes:
+      - stele-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stele -d stele"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - stele
+
+volumes:
+  stele-db-data:
+
+networks:
+  stele:
+    name: stele
+  odoo_internal:
+    external: true
