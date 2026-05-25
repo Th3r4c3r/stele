@@ -1,0 +1,205 @@
+/* Stele minimal styles. No framework. < 200 lines. */
+
+:root {
+	--fg: #1c1c1c;
+	--fg-muted: #6c6c6c;
+	--bg: #fafafa;
+	--bg-elev: #ffffff;
+	--border: #e3e3e3;
+	--accent: #335577;
+	--accent-fg: #ffffff;
+	--danger: #a83232;
+	--badge-open-bg: #fff4cc;
+	--badge-open-fg: #6b5300;
+	--badge-closed-bg: #d9e9d6;
+	--badge-closed-fg: #2b5d22;
+	--error-bg: #fce4e4;
+	--error-fg: #8a1f1f;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+	margin: 0;
+	padding: 0;
+	background: var(--bg);
+	color: var(--fg);
+	font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+main {
+	max-width: 920px;
+	margin: 0 auto;
+	padding: 24px 20px 60px;
+}
+
+.topbar {
+	background: var(--bg-elev);
+	border-bottom: 1px solid var(--border);
+	padding: 14px 24px;
+	display: flex;
+	align-items: center;
+	gap: 24px;
+}
+.topbar .brand {
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--fg);
+	text-decoration: none;
+	font-size: 18px;
+}
+.topbar nav a {
+	color: var(--fg-muted);
+	text-decoration: none;
+	margin-right: 16px;
+}
+.topbar nav a:hover { color: var(--fg); }
+
+.footer {
+	text-align: center;
+	color: var(--fg-muted);
+	padding: 20px;
+}
+
+h1 { font-size: 24px; margin: 0; }
+h2 { font-size: 18px; margin: 32px 0 12px; }
+
+.page-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 8px;
+}
+
+.muted { color: var(--fg-muted); }
+
+a { color: var(--accent); }
+
+table.claims {
+	width: 100%;
+	border-collapse: collapse;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+}
+table.claims th, table.claims td {
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--border);
+	text-align: left;
+	vertical-align: top;
+}
+table.claims th {
+	background: #f0f0f0;
+	font-weight: 600;
+	font-size: 13px;
+	color: var(--fg-muted);
+}
+table.claims tbody tr:last-child td { border-bottom: 0; }
+code { font: 13px/1.4 "SFMono-Regular", Consolas, monospace; background: #f2f2f2; padding: 1px 5px; border-radius: 3px; }
+
+.btn {
+	display: inline-block;
+	padding: 6px 14px;
+	border-radius: 4px;
+	background: var(--bg-elev);
+	color: var(--fg);
+	border: 1px solid var(--border);
+	text-decoration: none;
+	font-size: 14px;
+	cursor: pointer;
+}
+.btn:hover { background: #f2f2f2; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.primary:hover { background: #28466a; }
+.btn.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn.danger:hover { background: #8b2929; }
+
+.form {
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	max-width: 540px;
+}
+.form.inline { max-width: none; }
+.form label {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 13px;
+	color: var(--fg-muted);
+}
+.form input, .form textarea {
+	font: inherit;
+	color: var(--fg);
+	background: #ffffff;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 7px 9px;
+}
+.form input:focus, .form textarea:focus {
+	outline: 2px solid var(--accent);
+	outline-offset: -1px;
+}
+.form-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+.error {
+	background: var(--error-bg);
+	color: var(--error-fg);
+	padding: 8px 12px;
+	border-radius: 4px;
+	margin: 0;
+	font-size: 14px;
+}
+
+.badge {
+	display: inline-block;
+	padding: 2px 10px;
+	border-radius: 99px;
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+.badge.open { background: var(--badge-open-bg); color: var(--badge-open-fg); }
+.badge.closed { background: var(--badge-closed-bg); color: var(--badge-closed-fg); }
+
+dl.summary {
+	display: grid;
+	grid-template-columns: 140px 1fr;
+	gap: 4px 16px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 16px;
+	margin: 0;
+}
+dl.summary dt { color: var(--fg-muted); font-size: 13px; }
+dl.summary dd { margin: 0; }
+
+ol.timeline {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+}
+ol.timeline li {
+	padding: 10px 16px;
+	border-bottom: 1px solid var(--border);
+}
+ol.timeline li:last-child { border-bottom: 0; }
+ol.timeline time {
+	color: var(--fg-muted);
+	font-size: 13px;
+	margin-right: 12px;
+}
+ol.timeline strong { color: var(--accent); }
+ol.timeline p { margin: 4px 0 0; font-size: 14px; }

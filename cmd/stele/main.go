@@ -21,10 +21,12 @@ import (
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/migrate"
 	"github.com/Th3r4c3r/stele/internal/projection"
+	"github.com/Th3r4c3r/stele/internal/warranty"
+	"github.com/Th3r4c3r/stele/internal/web"
 	"github.com/Th3r4c3r/stele/migrations"
 )
 
-const banner = "Stele M1 alive"
+const banner = "Stele M2 alive"
 
 // version is set via -ldflags at build time.
 var version = "dev"
@@ -85,11 +87,14 @@ func runServer() int {
 
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
+	runner.Register(warranty.CurrentClaimsProjector())
 	runnerWG := runner.Start(ctx)
 	slog.Info("projection runner started", "projectors", runner.Names())
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", indexHandler)
+	// Warranty UI (/, /claims/...) plus static assets.
+	web.Mount(mux, pool, store)
+	// Operational + debug endpoints retained from M1.
 	mux.HandleFunc("GET /healthz", healthzHandler(pool))
 	mux.HandleFunc("POST /debug/event", appendDebugEvent(store))
 	mux.HandleFunc("GET /debug/events", listDebugEvents(store))
@@ -151,6 +156,7 @@ func runReplay(args []string) int {
 	store := event.NewPostgresStore(pool)
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
+	runner.Register(warranty.CurrentClaimsProjector())
 
 	targets := args
 	if args[0] == "--all" {
@@ -196,16 +202,6 @@ func openPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("ping: %w", err)
 	}
 	return pool, nil
-}
-
-func indexHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, "<!doctype html><meta charset=utf-8><title>Stele</title>"+
-		"<h1>%s</h1><p>version %s</p>", banner, version)
 }
 
 func healthzHandler(pool *pgxpool.Pool) http.HandlerFunc {

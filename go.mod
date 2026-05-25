@@ -3,6 +3,7 @@ module github.com/Th3r4c3r/stele
 go 1.23
 
 require (
+	github.com/a-h/templ v0.2.778
 	github.com/golang-migrate/migrate/v4 v4.18.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.1

@@ -1,0 +1,30 @@
+package templates
+
+// Layout is the chrome around every full-page response.
+// Fragment responses (HX-Request: true) render content directly without it.
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } — Stele</title>
+			<link rel="stylesheet" href="/static/stele.css"/>
+			<script src="/static/htmx.min.js" defer></script>
+		</head>
+		<body>
+			<header class="topbar">
+				<a class="brand" href="/">Stele</a>
+				<nav>
+					<a href="/claims">Claims</a>
+				</nav>
+			</header>
+			<main>
+				{ children... }
+			</main>
+			<footer class="footer">
+				<small>Stele &middot; warranty management on event sourcing</small>
+			</footer>
+		</body>
+	</html>
+}
