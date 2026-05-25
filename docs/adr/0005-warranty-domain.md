@@ -1,6 +1,6 @@
 # ADR-005: Warranty domain model
 
-- Status: Accepted
+- Status: Superseded by ADR-007 (2026-05-25)
 - Date: 2026-05-25
 - Authors: Claude (PM agent)
 - Builds on: ADR-001 (warranty as first domain), ADR-003 (event store), ADR-004 (projection engine)

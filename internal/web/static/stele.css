@@ -170,6 +170,58 @@ code { font: 13px/1.4 "SFMono-Regular", Consolas, monospace; background: #f2f2f2
 .badge.open { background: var(--badge-open-bg); color: var(--badge-open-fg); }
 .badge.closed { background: var(--badge-closed-bg); color: var(--badge-closed-fg); }
 
+.badge.status-triage     { background: #ffe7c2; color: #8a5300; }
+.badge.status-classified { background: #cfe2ff; color: #1c3e7a; }
+.badge.status-closed     { background: #d9e9d6; color: #2b5d22; }
+
+.badge.kind-warranty  { background: #c9e6ff; color: #144a78; }
+.badge.kind-oow       { background: #fdd9d9; color: #7a2424; }
+.badge.kind-goodwill  { background: #f6e4ff; color: #5a2a7a; }
+.badge.kind-recall    { background: #ffd7a8; color: #7d4d00; }
+.badge.kind-unrelated { background: #e8e8e8; color: #555;    }
+.badge.kind-edu       { background: #e0f4d5; color: #335a18; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 16px 0 12px; }
+.tab {
+	padding: 8px 14px;
+	color: var(--fg-muted);
+	text-decoration: none;
+	border-bottom: 2px solid transparent;
+	font-size: 14px;
+}
+.tab .count {
+	display: inline-block;
+	background: #ececec;
+	color: var(--fg-muted);
+	border-radius: 99px;
+	padding: 1px 8px;
+	font-size: 12px;
+	margin-left: 6px;
+}
+.tab.active { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
+.tab.active .count { background: var(--accent); color: var(--accent-fg); }
+
+.kindfilter {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+	margin: 0 0 12px;
+	font-size: 13px;
+}
+.chip {
+	display: inline-block;
+	padding: 3px 10px;
+	border-radius: 99px;
+	border: 1px solid var(--border);
+	background: var(--bg-elev);
+	color: var(--fg);
+	text-decoration: none;
+	font-size: 13px;
+}
+.chip:hover { background: #f0f0f0; }
+.chip.active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
 dl.summary {
 	display: grid;
 	grid-template-columns: 140px 1fr;

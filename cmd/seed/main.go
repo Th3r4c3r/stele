@@ -1,17 +1,17 @@
 // Stele synthetic seeder.
 //
-// Generates a realistic-looking but entirely synthetic dataset of
-// warranty claims via the warranty package's command API. Useful for
-// stress-testing the projection runner and exercising the UI on a
-// non-trivial data volume.
+// Generates synthetic fault cases via the fault package's command API
+// with a realistic kind distribution. Useful for stress-testing the
+// projection runner and exercising the UI on a non-trivial volume.
 //
 // USAGE:
 //
 //	stele-seed -count 200 [-clean]
 //
-// Reads STELE_DATABASE_URL from the environment (same DSN as the
-// server). The -clean flag wipes events/projection tables first
-// (intended for dev only; production has the append-only trigger).
+// Reads STELE_DATABASE_URL from the environment. The -clean flag wipes
+// events + projection tables first (dev only; production has the
+// append-only trigger which the script bypasses with
+// session_replication_role=replica).
 package main
 
 import (
@@ -30,8 +30,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Th3r4c3r/stele/internal/event"
+	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/migrate"
-	"github.com/Th3r4c3r/stele/internal/warranty"
 	"github.com/Th3r4c3r/stele/migrations"
 )
 
@@ -73,12 +73,49 @@ var noteSnippets = []string{
 	"Dealer reports no further occurrences after fix.",
 }
 
+// reasoningByKind seeds plausible reasoning strings for each kind, so
+// the timeline isn't all "lorem ipsum". Domain-flavoured.
+var reasoningByKind = map[string][]string{
+	fault.KindWarranty: {
+		"Component within 24-month warranty window.",
+		"Standard manufacturer defect, claim approved.",
+		"Within warranty mileage and time limits.",
+	},
+	fault.KindOutOfWarranty: {
+		"Vehicle out of warranty window by more than 90 days.",
+		"Mileage exceeded warranty cap; paid repair quoted.",
+		"Second-hand owner without transferable warranty.",
+	},
+	fault.KindGoodwill: {
+		"Out of warranty by 2 weeks; goodwill approved by service manager.",
+		"Loyal customer; goodwill repair authorised.",
+		"Defect bordering known issue; goodwill agreed.",
+	},
+	fault.KindRecall: {
+		"Matches active BMS recall campaign 2025-04.",
+		"VIN range within charger recall scope.",
+		"Frame inspection recall applies to this unit.",
+	},
+	fault.KindUnrelated: {
+		"User-installed third-party accessory caused the fault.",
+		"Crash damage, not a manufacturing defect.",
+		"Not reproducible after extensive testing; closed pending recurrence.",
+	},
+	fault.KindCustomerEducation: {
+		"Product working as designed; user expected different behaviour.",
+		"Charging time consistent with spec; education provided.",
+		"Range estimate matches spec under reported conditions.",
+	},
+}
+
 var resolutions = []string{
-	"Replaced BMS under warranty.",
+	"Replaced component under warranty.",
 	"Reflashed firmware; no further reports.",
 	"Replaced charger assembly; closed.",
 	"Could not reproduce after extended test; closed pending recurrence.",
 	"Part repaired; customer satisfied.",
+	"Customer educated on correct usage; case closed.",
+	"Recall remedy applied per campaign instructions.",
 }
 
 var vinAlphabet = []rune("ABCDEFGHJKLMNPRSTUVWXYZ0123456789")
@@ -96,8 +133,35 @@ func pick[T any](r *rand.Rand, xs []T) T {
 	return xs[r.IntN(len(xs))]
 }
 
+// pickKind returns a kind drawn from the cumulative distribution given
+// by the kindWeights slice. The numbers sum to 100.
+func pickKind(r *rand.Rand) string {
+	const total = 100
+	x := r.IntN(total)
+	cum := 0
+	for _, kw := range kindWeights {
+		cum += kw.weight
+		if x < cum {
+			return kw.kind
+		}
+	}
+	return kindWeights[len(kindWeights)-1].kind
+}
+
+var kindWeights = []struct {
+	kind   string
+	weight int // out of 100
+}{
+	{fault.KindWarranty, 35},
+	{fault.KindOutOfWarranty, 20},
+	{fault.KindCustomerEducation, 15},
+	{fault.KindUnrelated, 15},
+	{fault.KindGoodwill, 10},
+	{fault.KindRecall, 5},
+}
+
 func main() {
-	count := flag.Int("count", 200, "number of claims to generate")
+	count := flag.Int("count", 200, "number of cases to generate")
 	clean := flag.Bool("clean", false, "wipe events + projections first (dev only)")
 	flag.Parse()
 
@@ -128,7 +192,7 @@ func main() {
 		slog.Info("cleaning tables (dev)")
 		_, err := pool.Exec(ctx, `
 			SET session_replication_role = replica;
-			TRUNCATE events, projection_cursors, projection_event_counts, current_claims;
+			TRUNCATE events, projection_cursors, projection_event_counts, current_cases;
 			SET session_replication_role = origin;
 		`)
 		if err != nil {
@@ -143,31 +207,31 @@ func main() {
 	start := time.Now()
 	totalEvents := 0
 	for i := 0; i < *count; i++ {
-		_, evs, err := generateClaim(ctx, store, r)
+		_, evs, err := generateCase(ctx, store, r)
 		if err != nil {
 			slog.Error("generate", "i", i, "err", err)
 			os.Exit(1)
 		}
 		totalEvents += evs
 		if (i+1)%25 == 0 {
-			slog.Info("progress", "claims", i+1, "events_total", totalEvents)
+			slog.Info("progress", "cases", i+1, "events_total", totalEvents)
 		}
 	}
 	slog.Info("seed complete",
-		"claims", *count,
+		"cases", *count,
 		"events_total", totalEvents,
 		"elapsed_ms", time.Since(start).Milliseconds(),
 	)
 }
 
-// generateClaim creates one synthetic claim with a realistic event tail.
-// Returns the claim id and the number of events generated.
-func generateClaim(ctx context.Context, store *event.PostgresStore, r *rand.Rand) (uuid.UUID, int, error) {
+// generateCase: open, 1-5 notes, 80% Classified, 90% Closed
+// (uniformly across the population; not all branches matter).
+func generateCase(ctx context.Context, store *event.PostgresStore, r *rand.Rand) (uuid.UUID, int, error) {
 	dealer := pick(r, dealers)
 	fc := pick(r, faultCodes)
 	desc := pick(r, descriptions)
 
-	id, err := warranty.OpenClaim(ctx, store, warranty.ClaimOpened{
+	id, err := fault.OpenCase(ctx, store, fault.CaseOpened{
 		Dealer: dealer, VIN: randomVIN(r), FaultCode: fc, Description: desc,
 	})
 	if err != nil {
@@ -175,9 +239,9 @@ func generateClaim(ctx context.Context, store *event.PostgresStore, r *rand.Rand
 	}
 	events := 1
 
-	noteCount := 1 + r.IntN(5) // 1..5 notes
+	noteCount := 1 + r.IntN(5)
 	for i := 0; i < noteCount; i++ {
-		err := warranty.AddNote(ctx, store, id, warranty.NoteAdded{
+		err := fault.AddNote(ctx, store, id, fault.NoteAdded{
 			Author: pick(r, authors),
 			Text:   pick(r, noteSnippets),
 		})
@@ -187,8 +251,22 @@ func generateClaim(ctx context.Context, store *event.PostgresStore, r *rand.Rand
 		events++
 	}
 
-	if r.Float64() < 0.9 { // 90% closed
-		err := warranty.CloseClaim(ctx, store, id, warranty.ClaimClosed{
+	classify := r.Float64() < 0.80
+	var lastKind string
+	if classify {
+		lastKind = pickKind(r)
+		err := fault.Classify(ctx, store, id, fault.Classified{
+			Kind:      lastKind,
+			Reasoning: pick(r, reasoningByKind[lastKind]),
+		})
+		if err != nil {
+			return id, events, fmt.Errorf("classify: %w", err)
+		}
+		events++
+	}
+
+	if r.Float64() < 0.90 {
+		err := fault.CloseCase(ctx, store, id, fault.CaseClosed{
 			Resolution: pick(r, resolutions),
 			ClosedBy:   pick(r, authors),
 		})

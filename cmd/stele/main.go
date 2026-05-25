@@ -19,14 +19,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Th3r4c3r/stele/internal/event"
+	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/migrate"
 	"github.com/Th3r4c3r/stele/internal/projection"
-	"github.com/Th3r4c3r/stele/internal/warranty"
 	"github.com/Th3r4c3r/stele/internal/web"
 	"github.com/Th3r4c3r/stele/migrations"
 )
 
-const banner = "Stele M2 alive"
+const banner = "Stele alive"
 
 // version is set via -ldflags at build time.
 var version = "dev"
@@ -87,7 +87,7 @@ func runServer() int {
 
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
-	runner.Register(warranty.CurrentClaimsProjector())
+	runner.Register(fault.CurrentCasesProjector())
 	runnerWG := runner.Start(ctx)
 	slog.Info("projection runner started", "projectors", runner.Names())
 
@@ -156,7 +156,7 @@ func runReplay(args []string) int {
 	store := event.NewPostgresStore(pool)
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
-	runner.Register(warranty.CurrentClaimsProjector())
+	runner.Register(fault.CurrentCasesProjector())
 
 	targets := args
 	if args[0] == "--all" {

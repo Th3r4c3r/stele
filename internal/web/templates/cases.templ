@@ -1,0 +1,371 @@
+package templates
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/Th3r4c3r/stele/internal/fault"
+)
+
+// CaseRow is the projection of one row in current_cases, shaped for views.
+type CaseRow struct {
+	ID            uuid.UUID
+	Status        string
+	Kind          *string // null when not classified yet
+	Dealer        string
+	VIN           string
+	FaultCode     string
+	Description   string
+	OpenedAt      time.Time
+	ClassifiedAt  *time.Time
+	ClosedAt      *time.Time
+	LastUpdate    time.Time
+	NoteCount     int
+}
+
+// TimelineEntry is one row of the per-case event timeline.
+type TimelineEntry struct {
+	When    time.Time
+	Type    string
+	Summary string
+}
+
+// CasesListPage renders the index with three tabs and a kind filter.
+templ CasesListPage(triage []CaseRow, classified []CaseRow, closed []CaseRow, activeTab string, kindFilter string) {
+	@Layout("Cases") {
+		@CasesListBody(triage, classified, closed, activeTab, kindFilter)
+	}
+}
+
+templ CasesListBody(triage []CaseRow, classified []CaseRow, closed []CaseRow, activeTab string, kindFilter string) {
+	<section class="page-head">
+		<h1>Fault cases</h1>
+		<a class="btn primary" href="/cases/new">New case</a>
+	</section>
+	<nav class="tabs">
+		@tab("/cases?tab=triage", "Triage", len(triage), activeTab == "triage")
+		@tab("/cases?tab=classified", "Classified", len(classified), activeTab == "classified")
+		@tab("/cases?tab=closed", "Closed", len(closed), activeTab == "closed")
+	</nav>
+	switch activeTab {
+		case "triage":
+			if len(triage) == 0 {
+				<p class="muted">No cases in triage.</p>
+			} else {
+				@casesTable(triage, false)
+			}
+		case "classified":
+			@kindFilterChips(kindFilter)
+			if len(classified) == 0 {
+				<p class="muted">No classified cases match.</p>
+			} else {
+				@casesTable(classified, true)
+			}
+		case "closed":
+			@kindFilterChips(kindFilter)
+			if len(closed) == 0 {
+				<p class="muted">No closed cases yet.</p>
+			} else {
+				@casesTable(closed, true)
+			}
+	}
+}
+
+templ tab(href string, label string, count int, active bool) {
+	if active {
+		<a href={ templ.URL(href) } class="tab active">{ label } <span class="count">{ fmt.Sprint(count) }</span></a>
+	} else {
+		<a href={ templ.URL(href) } class="tab">{ label } <span class="count">{ fmt.Sprint(count) }</span></a>
+	}
+}
+
+templ kindFilterChips(active string) {
+	<div class="kindfilter">
+		<span class="muted">Filter:</span>
+		@kindChip("", "All", active == "")
+		for _, k := range fault.AllKinds {
+			@kindChip(k, kindLabel(k), active == k)
+		}
+	</div>
+}
+
+templ kindChip(value string, label string, active bool) {
+	if active {
+		<a class="chip active" href={ templ.URL(kindChipHref(value)) }>{ label }</a>
+	} else {
+		<a class="chip" href={ templ.URL(kindChipHref(value)) }>{ label }</a>
+	}
+}
+
+templ casesTable(rows []CaseRow, withKind bool) {
+	<table class="claims">
+		<thead>
+			<tr>
+				<th>Opened</th>
+				<th>Dealer</th>
+				<th>VIN</th>
+				<th>Fault</th>
+				if withKind {
+					<th>Kind</th>
+				}
+				<th>Notes</th>
+				<th></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, c := range rows {
+				<tr>
+					<td>{ c.OpenedAt.Format("2006-01-02") }</td>
+					<td>{ c.Dealer }</td>
+					<td><code>{ c.VIN }</code></td>
+					<td>{ c.FaultCode }</td>
+					if withKind {
+						<td>
+							if c.Kind != nil {
+								@kindBadge(*c.Kind)
+							} else {
+								<span class="muted">—</span>
+							}
+						</td>
+					}
+					<td>{ fmt.Sprint(c.NoteCount) }</td>
+					<td><a href={ templ.URL("/cases/" + c.ID.String()) }>Open</a></td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ kindBadge(kind string) {
+	switch kind {
+		case fault.KindWarranty:
+			<span class="badge kind-warranty">warranty</span>
+		case fault.KindOutOfWarranty:
+			<span class="badge kind-oow">out of warranty</span>
+		case fault.KindGoodwill:
+			<span class="badge kind-goodwill">goodwill</span>
+		case fault.KindRecall:
+			<span class="badge kind-recall">recall</span>
+		case fault.KindUnrelated:
+			<span class="badge kind-unrelated">unrelated</span>
+		case fault.KindCustomerEducation:
+			<span class="badge kind-edu">customer education</span>
+		default:
+			<span class="badge">{ kind }</span>
+	}
+}
+
+// NewCasePage shows the empty form.
+templ NewCasePage() {
+	@Layout("New case") {
+		<section class="page-head"><h1>New case</h1></section>
+		@NewCaseForm(NewCaseFormData{})
+	}
+}
+
+type NewCaseFormData struct {
+	Dealer      string
+	VIN         string
+	FaultCode   string
+	Description string
+	ErrorMsg    string
+}
+
+templ NewCaseForm(data NewCaseFormData) {
+	<form method="POST" action="/cases" hx-post="/cases" hx-target="this" hx-swap="outerHTML" class="form">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		<label>
+			Dealer
+			<input name="dealer" required value={ data.Dealer }/>
+		</label>
+		<label>
+			VIN (17 chars)
+			<input name="vin" required minlength="17" maxlength="17" value={ data.VIN }/>
+		</label>
+		<label>
+			Fault code
+			<input name="fault_code" required value={ data.FaultCode }/>
+		</label>
+		<label>
+			Description
+			<textarea name="description" required rows="4">{ data.Description }</textarea>
+		</label>
+		<div class="form-actions">
+			<a href="/cases" class="btn">Cancel</a>
+			<button type="submit" class="btn primary">Open case</button>
+		</div>
+	</form>
+}
+
+// CaseDetailPage renders a single case with its event timeline.
+templ CaseDetailPage(c CaseRow, timeline []TimelineEntry) {
+	@Layout("Case " + c.ID.String()[:8]) {
+		@CaseDetailBody(c, timeline)
+	}
+}
+
+templ CaseDetailBody(c CaseRow, timeline []TimelineEntry) {
+	<section class="page-head">
+		<h1>Case <span class="muted">{ c.ID.String()[:8] }</span></h1>
+		<a href="/cases" class="btn">Back to list</a>
+	</section>
+	@caseSummary(c)
+	<section>
+		<h2>Timeline</h2>
+		@CaseTimeline(timeline)
+	</section>
+	if c.Status != "closed" {
+		<section>
+			<h2>Add a note</h2>
+			@NoteForm(c.ID, NoteFormData{})
+		</section>
+	}
+	if c.Status == "triage" || c.Status == "classified" {
+		<section>
+			if c.Status == "triage" {
+				<h2>Classify this case</h2>
+			} else {
+				<h2>Re-classify</h2>
+			}
+			@ClassifyForm(c.ID, ClassifyFormData{Kind: derefStr(c.Kind)})
+		</section>
+		<section>
+			<h2>Close this case</h2>
+			@CloseForm(c.ID, CloseFormData{})
+		</section>
+	}
+}
+
+templ caseSummary(c CaseRow) {
+	<dl class="summary">
+		<dt>Status</dt>
+		<dd>
+			switch c.Status {
+				case "triage":
+					<span class="badge status-triage">triage</span>
+				case "classified":
+					<span class="badge status-classified">classified</span>
+				case "closed":
+					<span class="badge status-closed">closed</span>
+			}
+		</dd>
+		if c.Kind != nil {
+			<dt>Kind</dt>
+			<dd>@kindBadge(*c.Kind)</dd>
+		}
+		<dt>Dealer</dt><dd>{ c.Dealer }</dd>
+		<dt>VIN</dt><dd><code>{ c.VIN }</code></dd>
+		<dt>Fault code</dt><dd>{ c.FaultCode }</dd>
+		<dt>Description</dt><dd>{ c.Description }</dd>
+		<dt>Opened</dt><dd>{ c.OpenedAt.Format(time.RFC3339) }</dd>
+		if c.ClassifiedAt != nil {
+			<dt>Classified</dt><dd>{ c.ClassifiedAt.Format(time.RFC3339) }</dd>
+		}
+		if c.ClosedAt != nil {
+			<dt>Closed</dt><dd>{ c.ClosedAt.Format(time.RFC3339) }</dd>
+		}
+	</dl>
+}
+
+// CaseTimeline is the per-case event list (oldest first).
+templ CaseTimeline(entries []TimelineEntry) {
+	<ol class="timeline" id="timeline">
+		for _, e := range entries {
+			<li>
+				<time>{ e.When.Format("2006-01-02 15:04") }</time>
+				<strong>{ e.Type }</strong>
+				if e.Summary != "" {
+					<p>{ e.Summary }</p>
+				}
+			</li>
+		}
+	</ol>
+}
+
+type NoteFormData struct {
+	Author   string
+	Text     string
+	ErrorMsg string
+}
+
+templ NoteForm(caseID uuid.UUID, data NoteFormData) {
+	<form method="POST"
+	      action={ templ.URL("/cases/" + caseID.String() + "/notes") }
+	      hx-post={ string(templ.URL("/cases/" + caseID.String() + "/notes")) }
+	      hx-target="#timeline"
+	      hx-swap="outerHTML"
+	      hx-on::after-request="if(event.detail.successful)this.reset()"
+	      class="form inline">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		<label>
+			Author
+			<input name="author" value={ data.Author } placeholder="your name"/>
+		</label>
+		<label>
+			Note
+			<textarea name="text" required rows="3">{ data.Text }</textarea>
+		</label>
+		<button type="submit" class="btn">Add note</button>
+	</form>
+}
+
+type ClassifyFormData struct {
+	Kind      string
+	Reasoning string
+	ErrorMsg  string
+}
+
+templ ClassifyForm(caseID uuid.UUID, data ClassifyFormData) {
+	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/classify") } class="form inline">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		<label>
+			Kind
+			<select name="kind" required>
+				<option value="">— pick one —</option>
+				for _, k := range fault.AllKinds {
+					if k == data.Kind {
+						<option value={ k } selected>{ kindLabel(k) }</option>
+					} else {
+						<option value={ k }>{ kindLabel(k) }</option>
+					}
+				}
+			</select>
+		</label>
+		<label>
+			Reasoning
+			<textarea name="reasoning" required rows="3">{ data.Reasoning }</textarea>
+		</label>
+		<button type="submit" class="btn primary">Save classification</button>
+	</form>
+}
+
+type CloseFormData struct {
+	Resolution string
+	ClosedBy   string
+	ErrorMsg   string
+}
+
+templ CloseForm(caseID uuid.UUID, data CloseFormData) {
+	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/close") } class="form inline">
+		if data.ErrorMsg != "" {
+			<p class="error">{ data.ErrorMsg }</p>
+		}
+		<label>
+			Resolution
+			<textarea name="resolution" required rows="2">{ data.Resolution }</textarea>
+		</label>
+		<label>
+			Closed by
+			<input name="closed_by" value={ data.ClosedBy } placeholder="your name"/>
+		</label>
+		<button type="submit" class="btn danger">Close case</button>
+	</form>
+}
