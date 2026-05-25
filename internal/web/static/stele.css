@@ -233,6 +233,20 @@ code { font: 13px/1.4 "SFMono-Regular", Consolas, monospace; background: #f2f2f2
 .tab.active { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
 .tab.active .count { background: var(--accent); color: var(--accent-fg); }
 
+.upload-details {
+	margin-top: 10px;
+	font-size: 14px;
+}
+.upload-details summary {
+	cursor: pointer;
+	color: var(--accent);
+	padding: 6px 0;
+}
+.upload-details[open] summary { font-weight: 600; }
+.upload-details > .form { margin-top: 8px; }
+
+table.documents th, table.documents td { font-size: 14px; }
+
 .kindfilter {
 	display: flex;
 	flex-wrap: wrap;

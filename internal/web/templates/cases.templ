@@ -40,6 +40,33 @@ type TimelineEntry struct {
 	Summary string
 }
 
+// DocumentRow describes one attachment for the case detail view.
+type DocumentRow struct {
+	ID             uuid.UUID
+	Filename       string
+	ContentType    string
+	ByteSize       int64
+	AttachedAt     time.Time
+	AttachedByName string
+}
+
+// HumanSize is a tiny formatter for the templ side. Lives next to
+// the struct because templ expressions can call methods on values.
+func (d DocumentRow) HumanSize() string {
+	const k = 1024
+	n := d.ByteSize
+	switch {
+	case n < k:
+		return fmt.Sprintf("%d B", n)
+	case n < k*k:
+		return fmt.Sprintf("%.1f KiB", float64(n)/float64(k))
+	case n < k*k*k:
+		return fmt.Sprintf("%.1f MiB", float64(n)/float64(k*k))
+	default:
+		return fmt.Sprintf("%.1f GiB", float64(n)/float64(k*k*k))
+	}
+}
+
 // CasesListPage renders the index with four tabs, kind filter (on
 // classified+closed) and assignee filter (on every status tab).
 templ CasesListPage(
@@ -276,13 +303,13 @@ templ NewCaseForm(data NewCaseFormData) {
 }
 
 // CaseDetailPage renders a single case with its event timeline.
-templ CaseDetailPage(nav NavUser, c CaseRow, timeline []TimelineEntry, users []UserOption) {
+templ CaseDetailPage(nav NavUser, c CaseRow, timeline []TimelineEntry, users []UserOption, documents []DocumentRow) {
 	@Layout("Case "+c.ID.String()[:8], nav) {
-		@CaseDetailBody(c, timeline, users)
+		@CaseDetailBody(c, timeline, users, documents)
 	}
 }
 
-templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption) {
+templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption, documents []DocumentRow) {
 	<section class="page-head">
 		<h1>Case <span class="muted">{ c.ID.String()[:8] }</span></h1>
 		<a href="/cases" class="btn">Back to list</a>
@@ -291,6 +318,14 @@ templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption) {
 	<section>
 		<h2>Timeline</h2>
 		@CaseTimeline(timeline)
+	</section>
+	<section>
+		<h2>Documents ({ fmt.Sprint(len(documents)) })</h2>
+		@DocumentsList(documents)
+		<details class="upload-details">
+			<summary>Attach a file</summary>
+			@UploadForm(c.ID)
+		</details>
 	</section>
 	if c.Status != "closed" {
 		<section>
@@ -316,6 +351,50 @@ templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption) {
 			@CloseForm(c.ID, CloseFormData{})
 		</section>
 	}
+}
+
+templ DocumentsList(docs []DocumentRow) {
+	if len(docs) == 0 {
+		<p class="muted">No attachments yet.</p>
+	} else {
+		<table class="claims documents">
+			<thead>
+				<tr>
+					<th>Filename</th>
+					<th>Type</th>
+					<th>Size</th>
+					<th>Uploaded</th>
+					<th>By</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, d := range docs {
+					<tr>
+						<td><strong>{ d.Filename }</strong></td>
+						<td><code>{ d.ContentType }</code></td>
+						<td>{ d.HumanSize() }</td>
+						<td>{ d.AttachedAt.Format("2006-01-02 15:04") }</td>
+						<td>{ d.AttachedByName }</td>
+						<td><a href={ templ.URL("/documents/" + d.ID.String() + "/raw") }>Download</a></td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+templ UploadForm(caseID uuid.UUID) {
+	<form method="POST"
+	      action={ templ.URL("/cases/" + caseID.String() + "/documents") }
+	      enctype="multipart/form-data"
+	      class="form inline">
+		<label>
+			File (max 25 MiB)
+			<input type="file" name="file" required/>
+		</label>
+		<button type="submit" class="btn">Upload</button>
+	</form>
 }
 
 templ caseSummary(c CaseRow) {

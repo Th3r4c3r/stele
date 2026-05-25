@@ -20,6 +20,7 @@ import (
 
 	"github.com/Th3r4c3r/stele/internal/auth"
 	"github.com/Th3r4c3r/stele/internal/dealer"
+	"github.com/Th3r4c3r/stele/internal/document"
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/mail"
@@ -89,9 +90,22 @@ func runServer() int {
 
 	store := event.NewPostgresStore(pool)
 
+	docsDir := envOr("STELE_DOCS_DIR", "/data/documents")
+	docsMax, err := strconv.ParseInt(envOr("STELE_DOCS_MAX_BYTES", "26214400"), 10, 64)
+	if err != nil {
+		slog.Error("STELE_DOCS_MAX_BYTES invalid", "err", err)
+		return 1
+	}
+	docStorage, err := document.NewStorage(docsDir, docsMax)
+	if err != nil {
+		slog.Error("documents storage", "err", err, "hint", "bind-mount a host dir to "+docsDir)
+		return 1
+	}
+
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
 	runner.Register(fault.CurrentCasesProjector())
+	runner.Register(document.CurrentDocumentsProjector())
 	runnerWG := runner.Start(ctx)
 	slog.Info("projection runner started", "projectors", runner.Names())
 
@@ -128,6 +142,7 @@ func runServer() int {
 		Resets:     resets,
 		RateLimit:  rateLimit,
 		MailSender: mailer,
+		DocStore:   docStorage,
 		BaseURL:    baseURL,
 	})
 	// Operational + debug endpoints retained from M1.

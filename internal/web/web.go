@@ -21,6 +21,7 @@ import (
 
 	"github.com/Th3r4c3r/stele/internal/auth"
 	"github.com/Th3r4c3r/stele/internal/dealer"
+	"github.com/Th3r4c3r/stele/internal/document"
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/mail"
@@ -40,6 +41,7 @@ type Deps struct {
 	Resets     *auth.ResetTokens
 	RateLimit  *auth.LoginRateLimit
 	MailSender mail.Sender
+	DocStore   *document.Storage
 	BaseURL    string
 }
 
@@ -58,6 +60,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 		baseURL:    d.BaseURL,
 	}
 	acc := &accountHandlers{users: d.Users, sessions: d.Sessions}
+	docs := &docHandlers{pool: d.Pool, store: d.Store, storage: d.DocStore}
 	adm := &adminHandlers{
 		pool:       d.Pool,
 		users:      d.Users,
@@ -95,6 +98,8 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /cases/{id}/classify", wrap(h.classifyCase))
 	mux.Handle("POST /cases/{id}/close", wrap(h.closeCase))
 	mux.Handle("POST /cases/{id}/transfer", wrap(h.transferCase))
+	mux.Handle("POST /cases/{id}/documents", wrap(docs.uploadDocument))
+	mux.Handle("GET /documents/{id}/raw", wrap(docs.downloadDocument))
 
 	// Per-user self-service
 	mux.Handle("GET /account", wrap(acc.page))
@@ -321,8 +326,37 @@ func (h *handlers) showCase(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	docs, err := h.queryDocuments(r.Context(), id)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.CaseDetailPage(navFor(r.Context(), h.users), row, timeline, userOpts).Render(r.Context(), w)
+	_ = templates.CaseDetailPage(navFor(r.Context(), h.users), row, timeline, userOpts, docs).Render(r.Context(), w)
+}
+
+func (h *handlers) queryDocuments(ctx context.Context, caseID uuid.UUID) ([]templates.DocumentRow, error) {
+	rows, err := h.pool.Query(ctx, `
+		SELECT d.id, d.filename, d.content_type, d.byte_size, d.attached_at,
+		       COALESCE(u.name, d.attached_by_user_id::text)
+		FROM current_documents d
+		LEFT JOIN users u ON u.id = d.attached_by_user_id
+		WHERE d.case_id = $1
+		ORDER BY d.attached_at DESC
+	`, caseID)
+	if err != nil {
+		return nil, fmt.Errorf("queryDocuments: %w", err)
+	}
+	defer rows.Close()
+	var out []templates.DocumentRow
+	for rows.Next() {
+		var d templates.DocumentRow
+		if err := rows.Scan(&d.ID, &d.Filename, &d.ContentType, &d.ByteSize, &d.AttachedAt, &d.AttachedByName); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 func (h *handlers) addNote(w http.ResponseWriter, r *http.Request) {
@@ -608,8 +642,13 @@ func (h *handlers) userOptions(ctx context.Context) ([]templates.UserOption, err
 }
 
 func summarize(eventType string, payload []byte, nameByID map[uuid.UUID]string) string {
+	// Try fault events first. Fall back to document events. Other
+	// packages can register more decoders here as the domain grows.
 	v, err := fault.DecodePayload(eventType, payload)
 	if err != nil {
+		if dv, derr := document.DecodePayload(eventType, payload); derr == nil {
+			return summarizeDocument(dv, nameByID)
+		}
 		return ""
 	}
 	switch x := v.(type) {
@@ -648,6 +687,33 @@ func summarize(eventType string, payload []byte, nameByID map[uuid.UUID]string) 
 		return fmt.Sprintf("Closed by %s — %s", nonEmpty(x.ClosedBy, "system"), x.Resolution)
 	default:
 		return ""
+	}
+}
+
+func summarizeDocument(v any, nameByID map[uuid.UUID]string) string {
+	d, ok := v.(document.DocumentAttached)
+	if !ok {
+		return ""
+	}
+	who := nameByID[d.AttachedByUserID]
+	if who == "" {
+		who = d.AttachedByUserID.String()[:8]
+	}
+	return fmt.Sprintf("%s uploaded %s (%s, %s)",
+		who, d.OriginalFilename, d.ContentType, humanBytes(d.ByteSize))
+}
+
+func humanBytes(n int64) string {
+	const k = 1024
+	switch {
+	case n < k:
+		return fmt.Sprintf("%d B", n)
+	case n < k*k:
+		return fmt.Sprintf("%.1f KiB", float64(n)/float64(k))
+	case n < k*k*k:
+		return fmt.Sprintf("%.1f MiB", float64(n)/float64(k*k))
+	default:
+		return fmt.Sprintf("%.1f GiB", float64(n)/float64(k*k*k))
 	}
 }
 

@@ -34,7 +34,18 @@ docker compose -f "$COMPOSE_DIR/docker-compose.yml" exec -T db \
 SIZE=$(stat -c %s "$OUT")
 echo "[$(date -Iseconds)] dump size: $SIZE bytes"
 
+# Documents tarball (ADR-010). Only if the directory exists and is
+# non-empty. The same rotation policy applies.
+DOCS_DIR="${DOCS_DIR:-/home/yan/data/documents}"
+if [ -d "$DOCS_DIR" ] && [ -n "$(ls -A "$DOCS_DIR" 2>/dev/null)" ]; then
+    DOCS_OUT="$BACKUP_DIR/docs-${TS}.tar.gz"
+    echo "[$(date -Iseconds)] tarball -> $DOCS_OUT"
+    tar -czf "$DOCS_OUT" -C "$(dirname "$DOCS_DIR")" "$(basename "$DOCS_DIR")"
+    echo "[$(date -Iseconds)] docs tarball size: $(stat -c %s "$DOCS_OUT") bytes"
+fi
+
 echo "[$(date -Iseconds)] rotating: keep last $KEEP_DAYS days"
 find "$BACKUP_DIR" -maxdepth 1 -name 'stele-*.sql.gz' -mtime "+$KEEP_DAYS" -delete
+find "$BACKUP_DIR" -maxdepth 1 -name 'docs-*.tar.gz' -mtime "+$KEEP_DAYS" -delete
 
 echo "[$(date -Iseconds)] backup OK"

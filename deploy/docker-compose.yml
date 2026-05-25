@@ -32,6 +32,11 @@ services:
       STELE_SMTP_USER: ${STELE_SMTP_USER:-}
       STELE_SMTP_PASS: ${STELE_SMTP_PASS:-}
       STELE_SMTP_FROM: ${STELE_SMTP_FROM:-stele@stele.local}
+      # Documents storage (ADR-010). The host bind-mount is below.
+      STELE_DOCS_DIR: /data/documents
+      STELE_DOCS_MAX_BYTES: ${STELE_DOCS_MAX_BYTES:-26214400}
+    volumes:
+      - /home/yan/data/documents:/data/documents
     depends_on:
       db:
         condition: service_healthy
