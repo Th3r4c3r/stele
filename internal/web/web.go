@@ -499,7 +499,7 @@ func (h *handlers) transferCase(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, assigneeFilter uuid.UUID) ([]templates.CaseRow, error) {
 	args := []any{}
 	q := `
-		SELECT id, status, kind, dealer, vin, fault_code, description,
+		SELECT id, case_number, status, kind, dealer, vin, fault_code, description,
 		       opened_at, classified_at, closed_at, last_update, note_count, assignee_id
 		FROM current_cases
 		WHERE 1=1`
@@ -527,7 +527,7 @@ func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, as
 		var kind *string
 		var classifiedAt, closedAt *time.Time
 		var assignee *uuid.UUID
-		if err := rows.Scan(&c.ID, &c.Status, &kind, &c.Dealer, &c.VIN, &c.FaultCode, &c.Description,
+		if err := rows.Scan(&c.ID, &c.Number, &c.Status, &kind, &c.Dealer, &c.VIN, &c.FaultCode, &c.Description,
 			&c.OpenedAt, &classifiedAt, &closedAt, &c.LastUpdate, &c.NoteCount, &assignee); err != nil {
 			return nil, err
 		}
@@ -546,11 +546,11 @@ func (h *handlers) queryOneCase(ctx context.Context, id uuid.UUID) (templates.Ca
 	var classifiedAt, closedAt *time.Time
 	var assignee *uuid.UUID
 	err := h.pool.QueryRow(ctx, `
-		SELECT id, status, kind, dealer, vin, fault_code, description,
+		SELECT id, case_number, status, kind, dealer, vin, fault_code, description,
 		       opened_at, classified_at, closed_at, last_update, note_count, assignee_id
 		FROM current_cases
 		WHERE id = $1
-	`, id).Scan(&c.ID, &c.Status, &kind, &c.Dealer, &c.VIN, &c.FaultCode, &c.Description,
+	`, id).Scan(&c.ID, &c.Number, &c.Status, &kind, &c.Dealer, &c.VIN, &c.FaultCode, &c.Description,
 		&c.OpenedAt, &classifiedAt, &closedAt, &c.LastUpdate, &c.NoteCount, &assignee)
 	if err != nil {
 		return c, err

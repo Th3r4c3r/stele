@@ -23,7 +23,8 @@ type Result struct {
 // CaseHit is a fault_case that matched on one of its top-level fields.
 type CaseHit struct {
 	CaseID    uuid.UUID
-	Field     string // "vin" / "dealer" / "fault_code" / "description"
+	Number    int64  // human-readable identifier (e.g. 1234 -> "C-1234")
+	Field     string // "vin" / "dealer" / "fault_code" / "description" / "case_number"
 	Snippet   string // substring with the term, ~80 chars
 	Status    string
 	Kind      *string
@@ -91,9 +92,15 @@ func (s *Service) Find(ctx context.Context, raw string) (Result, error) {
 
 func (s *Service) findCases(ctx context.Context, term string) ([]CaseHit, error) {
 	pattern := "%" + term + "%"
+	// Accept "C-123" or "c123" or just "123" as case-number lookup.
+	numberTerm := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(term)), "c-")
+	numberTerm = strings.TrimPrefix(numberTerm, "c")
+	numberPattern := "%" + numberTerm + "%"
+
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, status, kind, dealer, vin, fault_code, description,
+		SELECT id, case_number, status, kind, dealer, vin, fault_code, description,
 		       CASE
+		         WHEN case_number::text ILIKE $2 THEN 'case_number'
 		         WHEN vin         ILIKE $1 THEN 'vin'
 		         WHEN dealer      ILIKE $1 THEN 'dealer'
 		         WHEN fault_code  ILIKE $1 THEN 'fault_code'
@@ -104,13 +111,14 @@ func (s *Service) findCases(ctx context.Context, term string) ([]CaseHit, error)
 		         ELSE ''
 		       END AS desc_for_snippet
 		FROM current_cases
-		WHERE vin         ILIKE $1
+		WHERE case_number::text ILIKE $2
+		   OR vin         ILIKE $1
 		   OR dealer      ILIKE $1
 		   OR fault_code  ILIKE $1
 		   OR description ILIKE $1
 		ORDER BY opened_at DESC
 		LIMIT 50
-	`, pattern)
+	`, pattern, numberPattern)
 	if err != nil {
 		return nil, fmt.Errorf("search.findCases: %w", err)
 	}
@@ -120,7 +128,7 @@ func (s *Service) findCases(ctx context.Context, term string) ([]CaseHit, error)
 		var h CaseHit
 		var desc string
 		var kind *string
-		if err := rows.Scan(&h.CaseID, &h.Status, &kind, &h.Dealer, &h.VIN, &h.FaultCode,
+		if err := rows.Scan(&h.CaseID, &h.Number, &h.Status, &kind, &h.Dealer, &h.VIN, &h.FaultCode,
 			&desc, &h.Field, &desc); err != nil {
 			return nil, err
 		}
@@ -142,6 +150,8 @@ func matchedFieldValue(h CaseHit, field string) string {
 		return h.Dealer
 	case "fault_code":
 		return h.FaultCode
+	case "case_number":
+		return fmt.Sprintf("C-%d", h.Number)
 	default:
 		return ""
 	}

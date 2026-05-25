@@ -62,7 +62,7 @@ func Layout(title string, nav NavUser) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</nav><form method=\"GET\" action=\"/search\" class=\"search-bar\"><input type=\"search\" name=\"q\" placeholder=\"Search VIN, dealer, fault, notes…\" autocomplete=\"off\" minlength=\"2\" maxlength=\"200\"></form><div class=\"user-menu\"><a class=\"user-link\" href=\"/account\" title=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</nav><form method=\"GET\" action=\"/search\" class=\"search-bar\"><input type=\"search\" name=\"q\" placeholder=\"Search C-1234, VIN, dealer, fault, notes…\" autocomplete=\"off\" minlength=\"2\" maxlength=\"200\"></form><div class=\"user-menu\"><a class=\"user-link\" href=\"/account\" title=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

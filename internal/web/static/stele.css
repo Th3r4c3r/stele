@@ -259,17 +259,40 @@ code { font: 13px/1.4 "SFMono-Regular", Consolas, monospace; background: #f2f2f2
 .tab.active { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
 .tab.active .count { background: var(--accent); color: var(--accent-fg); }
 
-.upload-details {
+.upload-details,
+.actions-details {
 	margin-top: 10px;
 	font-size: 14px;
 }
-.upload-details summary {
+.upload-details summary,
+.actions-details summary {
 	cursor: pointer;
 	color: var(--accent);
-	padding: 6px 0;
+	padding: 8px 12px;
+	background: #f4f4f4;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	font-weight: 500;
+	user-select: none;
 }
-.upload-details[open] summary { font-weight: 600; }
-.upload-details > .form { margin-top: 8px; }
+.upload-details summary:hover,
+.actions-details summary:hover { background: #ececec; }
+.upload-details[open] summary,
+.actions-details[open] summary { font-weight: 600; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.upload-details > .form,
+.actions-details > .form {
+	margin-top: 0;
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+}
+
+a.case-num {
+	font-family: "SFMono-Regular", Consolas, monospace;
+	color: var(--accent);
+	text-decoration: none;
+	font-weight: 600;
+}
+a.case-num:hover { text-decoration: underline; }
 
 table.documents th, table.documents td { font-size: 14px; }
 

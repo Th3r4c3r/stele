@@ -12,6 +12,7 @@ import (
 // CaseRow is the projection of one row in current_cases, shaped for views.
 type CaseRow struct {
 	ID            uuid.UUID
+	Number        int64 // human-readable id, displayed as "C-1234"
 	Status        string
 	Kind          *string
 	Dealer        string
@@ -25,6 +26,11 @@ type CaseRow struct {
 	NoteCount     int
 	AssigneeID    *uuid.UUID
 	AssigneeName  string // resolved by the handler ("Mario Bossi") or "" if not assigned
+}
+
+// Display returns the user-facing identifier like "C-1234".
+func (c CaseRow) Display() string {
+	return fmt.Sprintf("C-%d", c.Number)
 }
 
 // UserOption is a (id, label) pair for transfer dropdowns.
@@ -192,6 +198,7 @@ templ casesTable(rows []CaseRow, withKind bool, withAssignee bool) {
 	<table class="claims">
 		<thead>
 			<tr>
+				<th>#</th>
 				<th>Opened</th>
 				<th>Dealer</th>
 				<th>VIN</th>
@@ -209,6 +216,7 @@ templ casesTable(rows []CaseRow, withKind bool, withAssignee bool) {
 		<tbody>
 			for _, c := range rows {
 				<tr>
+					<td><a href={ templ.URL("/cases/" + c.ID.String()) } class="case-num">{ c.Display() }</a></td>
 					<td>{ c.OpenedAt.Format("2006-01-02") }</td>
 					<td>{ c.Dealer }</td>
 					<td><code>{ c.VIN }</code></td>
@@ -304,14 +312,14 @@ templ NewCaseForm(data NewCaseFormData) {
 
 // CaseDetailPage renders a single case with its event timeline.
 templ CaseDetailPage(nav NavUser, c CaseRow, timeline []TimelineEntry, users []UserOption, documents []DocumentRow) {
-	@Layout("Case "+c.ID.String()[:8], nav) {
+	@Layout(c.Display(), nav) {
 		@CaseDetailBody(c, timeline, users, documents)
 	}
 }
 
 templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption, documents []DocumentRow) {
 	<section class="page-head">
-		<h1>Case <span class="muted">{ c.ID.String()[:8] }</span></h1>
+		<h1>Case <strong>{ c.Display() }</strong> <span class="muted">&middot; { c.ID.String()[:8] }</span></h1>
 		<a href="/cases" class="btn">Back to list</a>
 	</section>
 	@caseSummary(c)
@@ -329,26 +337,34 @@ templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption, do
 	</section>
 	if c.Status != "closed" {
 		<section>
-			<h2>Transfer to another user</h2>
-			@TransferForm(c.ID, c.AssigneeID, users, TransferFormData{})
-		</section>
-		<section>
 			<h2>Add a note</h2>
 			@NoteForm(c.ID, NoteFormData{})
 		</section>
 	}
 	if c.Status == "triage" || c.Status == "classified" {
 		<section>
-			if c.Status == "triage" {
-				<h2>Classify this case</h2>
-			} else {
-				<h2>Re-classify</h2>
-			}
-			@ClassifyForm(c.ID, ClassifyFormData{Kind: derefStr(c.Kind)})
+			<details class="actions-details" { triageOrClassifiedDefaultOpen(c.Status)... }>
+				<summary>
+					if c.Status == "triage" {
+						Classify this case
+					} else {
+						Re-classify
+					}
+				</summary>
+				@ClassifyForm(c.ID, ClassifyFormData{Kind: derefStr(c.Kind)})
+			</details>
 		</section>
+	}
+	if c.Status != "closed" {
 		<section>
-			<h2>Close this case</h2>
-			@CloseForm(c.ID, CloseFormData{})
+			<details class="actions-details">
+				<summary>Transfer to another user</summary>
+				@TransferForm(c.ID, c.AssigneeID, users, TransferFormData{})
+			</details>
+			<details class="actions-details">
+				<summary>Close this case</summary>
+				@CloseForm(c.ID, CloseFormData{})
+			</details>
 		</section>
 	}
 }

@@ -3,6 +3,8 @@ package templates
 import (
 	"strings"
 
+	"github.com/a-h/templ"
+
 	"github.com/Th3r4c3r/stele/internal/fault"
 )
 
@@ -58,6 +60,17 @@ func derefStr(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// triageOrClassifiedDefaultOpen returns the attrs for a <details>
+// element so that triage cases open the Classify section by default
+// (it's the next expected action), while classified cases keep
+// "Re-classify" collapsed (you rarely re-classify, but it's there).
+func triageOrClassifiedDefaultOpen(status string) templ.Attributes {
+	if status == "triage" {
+		return templ.Attributes{"open": ""}
+	}
+	return templ.Attributes{}
 }
 
 // joinComma joins a slice with ", " or returns "—" when empty.

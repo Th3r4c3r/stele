@@ -51,11 +51,14 @@ func applyCaseOpened(ctx context.Context, tx pgx.Tx, ev event.Event) error {
 		// (legacy smoke events from M0/M1). Skip rather than insert.
 		return nil
 	}
+	// nextval is consumed only when the INSERT actually happens (no
+	// conflict on id). On replay, ON CONFLICT DO NOTHING preserves the
+	// existing number assigned at first application.
 	const q = `
 		INSERT INTO current_cases
 		    (id, status, dealer, vin, fault_code, description,
-		     opened_at, last_update, note_count, last_event_id)
-		VALUES ($1, 'triage', $2, $3, $4, $5, $6, $6, 0, $7)
+		     opened_at, last_update, note_count, last_event_id, case_number)
+		VALUES ($1, 'triage', $2, $3, $4, $5, $6, $6, 0, $7, nextval('case_number_seq'))
 		ON CONFLICT (id) DO NOTHING
 	`
 	_, err = tx.Exec(ctx, q,

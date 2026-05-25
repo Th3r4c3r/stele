@@ -18,6 +18,7 @@ func (h *handlers) searchPage(w http.ResponseWriter, r *http.Request) {
 	for _, c := range res.Cases {
 		cases = append(cases, templates.SearchCaseHit{
 			CaseID:    c.CaseID,
+			Number:    c.Number,
 			Status:    c.Status,
 			Dealer:    c.Dealer,
 			VIN:       c.VIN,
