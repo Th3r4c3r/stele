@@ -157,6 +157,13 @@ runs on the Hetzner instance at a URL Yan can open.
 - Surfaced after M9.2 because UI case creation finally went live with
   real users. Race was pre-existing in M1 polling design. ✅
 
+## M12 — Admin audit log (DONE 2026-05-26)
+- Migration 0012 admin_audit (append-only, denormalised actor_email). ✅
+- AuditAdminActions middleware: records 2xx/3xx /admin/* mutations
+  with actor, method, path, status, summary, ip, ua. ✅
+- audit.SetSummary(ctx, "...") in every mutating admin handler. ✅
+- /admin/audit page, last 200 entries, newest first. ✅
+
 ## M11 — Recall report (DONE 2026-05-26)
 - /admin/recalls: per recall code, unique VINs affected, VINs with at
   least one open case (urgent slice), total open + closed cases. ✅
