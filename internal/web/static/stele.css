@@ -84,6 +84,29 @@ main {
 
 mark { background: #fff3a8; padding: 0 2px; border-radius: 2px; }
 
+.kpi-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 14px;
+	margin: 16px 0 24px;
+}
+.kpi-card {
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 14px 16px;
+}
+.kpi-label { font-size: 12px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.kpi-value { font-size: 32px; font-weight: 700; margin: 4px 0; color: var(--fg); }
+.kpi-sub   { font-size: 12px; color: var(--fg-muted); }
+
+.dash-row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.dash-col h2 { margin-top: 32px; }
+
+table.compact th, table.compact td { padding: 6px 10px; font-size: 14px; }
+
+.sparkline { display: block; max-width: 100%; height: auto; margin: 12px 0 24px; }
+
 .user-menu {
 	display: flex;
 	align-items: center;

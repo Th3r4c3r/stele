@@ -1,0 +1,148 @@
+package templates
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// KPICard is the data for a single headline card.
+type KPICard struct {
+	Label string
+	Value int
+	Sub   string // optional subtext, e.g. "last 7 days"
+}
+
+// DashKindRow is one row in the classification mix table.
+type DashKindRow struct {
+	Kind  string
+	Count int
+}
+
+// DashQueueRow is one row in the assignee queue table.
+type DashQueueRow struct {
+	UserID   uuid.UUID
+	UserName string
+	Role     string
+	Open     int
+}
+
+// DashDealerRow is one row in the top-dealers table.
+type DashDealerRow struct {
+	Dealer string
+	Region string
+	Open   int
+	Closed int
+	Total  int
+}
+
+// DashDay is one bar of the sparkline.
+type DashDay struct {
+	Day   time.Time
+	Count int
+}
+
+templ DashboardPage(
+	nav NavUser,
+	cards []KPICard,
+	mix []DashKindRow,
+	queue []DashQueueRow,
+	dealers []DashDealerRow,
+	activity []DashDay,
+) {
+	@Layout("Dashboard", nav) {
+		<section class="page-head"><h1>Dashboard</h1></section>
+
+		<section class="kpi-grid">
+			for _, c := range cards {
+				<div class="kpi-card">
+					<div class="kpi-label">{ c.Label }</div>
+					<div class="kpi-value">{ fmt.Sprint(c.Value) }</div>
+					if c.Sub != "" {
+						<div class="kpi-sub">{ c.Sub }</div>
+					}
+				</div>
+			}
+		</section>
+
+		<section>
+			<h2>Activity (last 7 days)</h2>
+			@activitySparkline(activity)
+		</section>
+
+		<section class="dash-row">
+			<div class="dash-col">
+				<h2>Classification mix</h2>
+				if len(mix) == 0 {
+					<p class="muted">No cases yet.</p>
+				} else {
+					<table class="claims compact">
+						<thead><tr><th>Kind</th><th>Count</th></tr></thead>
+						<tbody>
+							for _, m := range mix {
+								<tr>
+									<td>{ humanKind(m.Kind) }</td>
+									<td><strong>{ fmt.Sprint(m.Count) }</strong></td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			</div>
+			<div class="dash-col">
+				<h2>Queue per assignee</h2>
+				if len(queue) == 0 {
+					<p class="muted">No users yet.</p>
+				} else {
+					<table class="claims compact">
+						<thead><tr><th>Assignee</th><th>Role</th><th>Open</th></tr></thead>
+						<tbody>
+							for _, q := range queue {
+								<tr>
+									<td>{ q.UserName }</td>
+									<td><small class="muted">{ q.Role }</small></td>
+									<td><strong>{ fmt.Sprint(q.Open) }</strong></td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			</div>
+		</section>
+
+		<section>
+			<h2>Top dealers (last 30 days)</h2>
+			if len(dealers) == 0 {
+				<p class="muted">No activity in the last 30 days.</p>
+			} else {
+				<table class="claims compact">
+					<thead>
+						<tr><th>Dealer</th><th>Region</th><th>Open</th><th>Closed</th><th>Total</th></tr>
+					</thead>
+					<tbody>
+						for _, d := range dealers {
+							<tr>
+								<td><code>{ d.Dealer }</code></td>
+								<td>{ d.Region }</td>
+								<td>{ fmt.Sprint(d.Open) }</td>
+								<td>{ fmt.Sprint(d.Closed) }</td>
+								<td><strong>{ fmt.Sprint(d.Total) }</strong></td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		</section>
+	}
+}
+
+// activitySparkline renders the last-7-days events as inline SVG bars.
+// 7 bars + axis labels (weekday short names). No JS.
+templ activitySparkline(days []DashDay) {
+	if len(days) == 0 {
+		<p class="muted">No data.</p>
+	} else {
+		@templ.Raw(renderSparklineSVG(days))
+	}
+}

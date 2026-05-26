@@ -24,6 +24,7 @@ templ Layout(title string, nav NavUser) {
 			<header class="topbar">
 				<a class="brand" href="/">Stele</a>
 				<nav class="primary">
+					<a href="/dashboard">Dashboard</a>
 					<a href="/cases">Cases</a>
 					if nav.IsAdmin {
 						<a href="/admin">Admin</a>

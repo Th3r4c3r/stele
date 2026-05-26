@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Th3r4c3r/stele/internal/auth"
@@ -145,11 +143,9 @@ func runServer() int {
 		DocStore:   docStorage,
 		BaseURL:    baseURL,
 	})
-	// Operational + debug endpoints retained from M1.
+	// Operational endpoint (public, no auth). Debug endpoints removed
+	// in M7 — the dashboard + replay command cover their use cases.
 	mux.HandleFunc("GET /healthz", healthzHandler(pool))
-	mux.HandleFunc("POST /debug/event", appendDebugEvent(store))
-	mux.HandleFunc("GET /debug/events", listDebugEvents(store))
-	mux.HandleFunc("GET /debug/projections", listProjections(pool))
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -277,102 +273,6 @@ func healthzHandler(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
-	}
-}
-
-type debugEventReq struct {
-	AggregateType string          `json:"aggregate_type"`
-	AggregateID   uuid.UUID       `json:"aggregate_id"`
-	Type          string          `json:"type"`
-	Payload       json.RawMessage `json:"payload"`
-	OccurredAt    time.Time       `json:"occurred_at"`
-}
-
-func appendDebugEvent(store *event.PostgresStore) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req debugEventReq
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if req.AggregateType == "" || req.Type == "" {
-			http.Error(w, "aggregate_type and type are required", http.StatusBadRequest)
-			return
-		}
-		if req.AggregateID == uuid.Nil {
-			req.AggregateID = uuid.Must(uuid.NewV7())
-		}
-		ev := event.Event{
-			AggregateType: req.AggregateType,
-			AggregateID:   req.AggregateID,
-			Type:          req.Type,
-			Payload:       req.Payload,
-			OccurredAt:    req.OccurredAt,
-		}
-		evs := []event.Event{ev}
-		if err := store.Append(r.Context(), evs); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(evs[0])
-	}
-}
-
-func listDebugEvents(store *event.PostgresStore) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		limit := 50
-		if l := r.URL.Query().Get("limit"); l != "" {
-			n, err := strconv.Atoi(l)
-			if err == nil && n > 0 && n <= 500 {
-				limit = n
-			}
-		}
-		var out []event.Event
-		for ev, err := range store.Stream(r.Context(), event.StreamOptions{BatchSize: limit}) {
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			out = append(out, ev)
-			if len(out) >= limit {
-				break
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(out)
-	}
-}
-
-type projectionCount struct {
-	AggregateType string `json:"aggregate_type"`
-	Type          string `json:"type"`
-	Count         int64  `json:"count"`
-}
-
-func listProjections(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := pool.Query(r.Context(), `
-			SELECT aggregate_type, type, count
-			FROM projection_event_counts
-			ORDER BY aggregate_type, type
-		`)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-		out := []projectionCount{}
-		for rows.Next() {
-			var pc projectionCount
-			if err := rows.Scan(&pc.AggregateType, &pc.Type, &pc.Count); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			out = append(out, pc)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(out)
 	}
 }
 

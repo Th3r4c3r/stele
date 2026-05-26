@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/a-h/templ"
@@ -95,6 +96,76 @@ func userFormAction(id string) string {
 		return "/admin/users"
 	}
 	return "/admin/users/" + id
+}
+
+// humanKind converts the enum kind string into a readable label.
+// Falls back to the raw value (e.g. for "unclassified" or future kinds).
+func humanKind(k string) string {
+	switch k {
+	case "warranty":
+		return "Warranty"
+	case "out_of_warranty":
+		return "Out of warranty"
+	case "goodwill":
+		return "Goodwill"
+	case "recall":
+		return "Recall"
+	case "unrelated":
+		return "Unrelated"
+	case "customer_education":
+		return "Customer education"
+	case "unclassified":
+		return "Unclassified"
+	default:
+		return k
+	}
+}
+
+// renderSparklineSVG produces a 7-bar SVG bar chart inline. ~15 lines,
+// no JS, no chart library. Width scales with max count.
+func renderSparklineSVG(days []DashDay) string {
+	if len(days) == 0 {
+		return ""
+	}
+	maxCount := 1
+	for _, d := range days {
+		if d.Count > maxCount {
+			maxCount = d.Count
+		}
+	}
+	const (
+		barW  = 50
+		gap   = 8
+		maxH  = 80
+		padY  = 24 // top label space
+		botY  = 16 // bottom label space
+	)
+	totalW := len(days)*(barW+gap) - gap
+	totalH := maxH + padY + botY
+	var sb strings.Builder
+	fmt.Fprintf(&sb, `<svg class="sparkline" width="%d" height="%d" viewBox="0 0 %d %d" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Activity last 7 days">`,
+		totalW, totalH, totalW, totalH)
+	for i, d := range days {
+		x := i * (barW + gap)
+		bh := 0
+		if d.Count > 0 {
+			bh = (d.Count * maxH) / maxCount
+			if bh < 2 {
+				bh = 2
+			}
+		}
+		y := padY + (maxH - bh)
+		fmt.Fprintf(&sb, `<rect x="%d" y="%d" width="%d" height="%d" rx="2" fill="#335577"/>`,
+			x, y, barW, bh)
+		// Value above the bar.
+		fmt.Fprintf(&sb, `<text x="%d" y="%d" text-anchor="middle" font-size="11" fill="#1c1c1c">%d</text>`,
+			x+barW/2, padY-6, d.Count)
+		// Weekday short name below.
+		fmt.Fprintf(&sb, `<text x="%d" y="%d" text-anchor="middle" font-size="11" fill="#6c6c6c">%s</text>`,
+			x+barW/2, padY+maxH+12, d.Day.Format("Mon"))
+	}
+	sb.WriteString(`</svg>`)
+	return sb.String()
 }
 
 // highlightHTML wraps every case-insensitive occurrence of term in
