@@ -165,10 +165,15 @@ runs on the Hetzner instance at a URL Yan can open.
   Capped at 500 with truncation notice. ✅
 - /admin overview card added. ✅
 
-## M10 — Failure-rate analytics (next)
-- Page joining case_parts + vehicles + parts: "top failing PNs by
-  model", "failure rate per fault_code per model", cohort by year.
-- Deferred from M9 split; data model is ready, only queries + UI left.
+## M10 — Failure-rate analytics (DONE 2026-05-26)
+- /analytics joins case_parts + current_cases + vehicles + parts. ✅
+- Top failing PN per model, last 90 days, replaced only. ✅
+- Failure rate per fault_code per model + manufactured_year, expressed
+  as cases per 1000 vehicles in cohort. ✅
+- Avg + total replaced-parts cost per kind / model. ✅
+- Seeder extended to pull VINs from the vehicles master and emit
+  PartReplaced/PartQuoted on ~25% of classified cases. ✅
+- Visible to all logged-in users (analytics is operational, not audit).
 
 ## (deferred indefinitely) — Time-travel
 Bi-temporal state-as-of API + UI. Deferred until a concrete consumer
