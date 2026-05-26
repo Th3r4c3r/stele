@@ -141,6 +141,8 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /admin/vehicles/import-models", wrapAdmin(masters.vehiclesImportModels))
 	mux.Handle("GET /admin/parts", wrapAdmin(masters.partsPage))
 	mux.Handle("POST /admin/parts/import", wrapAdmin(masters.partsImport))
+	mux.Handle("GET /admin/recalls", wrapAdmin(adm.recallsList))
+	mux.Handle("GET /admin/recalls/{code}", wrapAdmin(adm.recallDetail))
 
 	staticFS, err := fs.Sub(static.FS, ".")
 	if err != nil {

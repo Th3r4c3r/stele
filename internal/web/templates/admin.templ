@@ -42,7 +42,7 @@ type AdminRule struct {
 }
 
 // AdminOverview is the /admin landing.
-templ AdminOverview(nav NavUser, activeUsers, deactivatedUsers, dealers, rules, sessions int) {
+templ AdminOverview(nav NavUser, activeUsers, deactivatedUsers, dealers, rules, sessions, recallCodes int) {
 	@AdminShell("Admin", nav) {
 		<section class="page-head"><h1>Admin</h1></section>
 		<ul class="overview">
@@ -51,8 +51,152 @@ templ AdminOverview(nav NavUser, activeUsers, deactivatedUsers, dealers, rules, 
 			<li><strong>{ fmt.Sprint(dealers) }</strong> dealers — <a href="/admin/dealers">manage</a></li>
 			<li>Vehicles &amp; models master — <a href="/admin/vehicles">manage</a></li>
 			<li>Parts catalog — <a href="/admin/parts">manage</a></li>
+			<li><strong>{ fmt.Sprint(recallCodes) }</strong> recall codes — <a href="/admin/recalls">report</a></li>
 			<li><strong>{ fmt.Sprint(sessions) }</strong> active sessions</li>
 		</ul>
+	}
+}
+
+// AdminRecallSummary is one row of the /admin/recalls report:
+// a recall code with how many VINs it covers and how many of those
+// VINs already have at least one case opened on them, split by
+// open vs closed.
+type AdminRecallSummary struct {
+	Code             string
+	VINCount         int // unique VINs in master subject to this recall
+	VINsWithOpenCase int // unique VINs with at least one open case
+	OpenCases        int // total open cases across those VINs
+	ClosedCases      int // total closed cases across those VINs
+}
+
+// AdminRecallVINRow is one row in the per-recall drill-down: one VIN
+// affected by the recall, with its model and any case activity.
+type AdminRecallVINRow struct {
+	VIN              string
+	ModelName        string
+	Color            *string
+	SoldAt           *time.Time
+	OpenCases        int
+	TotalCases       int
+	LatestCaseID     *uuid.UUID // newest case on this VIN, if any
+	LatestCaseNumber *int64
+}
+
+// AdminRecallsPage lists every recall code with a quick scoreboard.
+templ AdminRecallsPage(nav NavUser, items []AdminRecallSummary) {
+	@AdminShell("Admin · recalls", nav) {
+		<section class="page-head">
+			<h1>Recall report</h1>
+			<a href="/admin" class="btn">Back</a>
+		</section>
+		if len(items) == 0 {
+			<p class="muted">No recall data yet. Import vehicles with a <code>recalls</code> column on <a href="/admin/vehicles">/admin/vehicles</a>.</p>
+		} else {
+			<table class="claims admin">
+				<thead>
+					<tr>
+						<th>Recall code</th>
+						<th>VINs affected</th>
+						<th>VINs with open case</th>
+						<th>Open cases</th>
+						<th>Closed cases</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, r := range items {
+						<tr>
+							<td><strong>{ r.Code }</strong></td>
+							<td>{ fmt.Sprint(r.VINCount) }</td>
+							<td>
+								if r.VINsWithOpenCase > 0 {
+									<strong>{ fmt.Sprint(r.VINsWithOpenCase) }</strong>
+								} else {
+									<span class="muted">0</span>
+								}
+							</td>
+							<td>{ fmt.Sprint(r.OpenCases) }</td>
+							<td><span class="muted">{ fmt.Sprint(r.ClosedCases) }</span></td>
+							<td><a href={ templ.URL("/admin/recalls/" + r.Code) }>drill in →</a></td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
+}
+
+// AdminRecallDetailPage drills into one recall code: every VIN it
+// affects, ordered by "has open cases" first so an operator sees the
+// urgent rows at the top.
+templ AdminRecallDetailPage(nav NavUser, recallCode string, rows []AdminRecallVINRow, capped bool) {
+	@AdminShell("Admin · recall "+recallCode, nav) {
+		<section class="page-head">
+			<h1>Recall <code>{ recallCode }</code></h1>
+			<a href="/admin/recalls" class="btn">Back to all recalls</a>
+		</section>
+		if len(rows) == 0 {
+			<p class="muted">No VIN in the master is currently tagged with this recall.</p>
+		}
+		if len(rows) > 0 {
+			<p>
+				<strong>{ fmt.Sprint(len(rows)) }</strong>
+				<span>VINs shown</span>
+				if capped {
+					<span class="muted">capped at 500</span>
+				}
+			</p>
+			<table class="claims admin compact">
+				<thead>
+					<tr>
+						<th>VIN</th>
+						<th>Model</th>
+						<th>Color</th>
+						<th>Sold</th>
+						<th>Open cases</th>
+						<th>Total cases</th>
+						<th>Latest case</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, r := range rows {
+						<tr>
+							<td><code>{ r.VIN }</code></td>
+							<td>{ r.ModelName }</td>
+							<td>
+								if r.Color != nil {
+										{ *r.Color }
+									} else {
+										<span class="muted">—</span>
+									}
+							</td>
+							<td>
+								if r.SoldAt != nil {
+										{ r.SoldAt.Format("2006-01-02") }
+									} else {
+										<span class="muted">—</span>
+									}
+							</td>
+							<td>
+								if r.OpenCases > 0 {
+									<strong>{ fmt.Sprint(r.OpenCases) }</strong>
+								} else {
+									<span class="muted">0</span>
+								}
+							</td>
+							<td><span class="muted">{ fmt.Sprint(r.TotalCases) }</span></td>
+							<td>
+								if r.LatestCaseID != nil && r.LatestCaseNumber != nil {
+									<a href={ templ.URL("/cases/" + r.LatestCaseID.String()) }>C-{ fmt.Sprint(*r.LatestCaseNumber) }</a>
+								} else {
+									<span class="muted">—</span>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
 	}
 }
 

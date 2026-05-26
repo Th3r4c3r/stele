@@ -31,14 +31,124 @@ type adminHandlers struct {
 }
 
 func (a *adminHandlers) overview(w http.ResponseWriter, r *http.Request) {
-	var active, deactivated, dealers, rules, sessions int
+	var active, deactivated, dealers, rules, sessions, recallCodes int
 	_ = a.pool.QueryRow(r.Context(), `SELECT count(*) FROM users WHERE deactivated_at IS NULL`).Scan(&active)
 	_ = a.pool.QueryRow(r.Context(), `SELECT count(*) FROM users WHERE deactivated_at IS NOT NULL`).Scan(&deactivated)
 	_ = a.pool.QueryRow(r.Context(), `SELECT count(*) FROM dealers`).Scan(&dealers)
 	_ = a.pool.QueryRow(r.Context(), `SELECT count(*) FROM assignment_rules`).Scan(&rules)
 	_ = a.pool.QueryRow(r.Context(), `SELECT count(*) FROM sessions WHERE expires_at > now()`).Scan(&sessions)
+	_ = a.pool.QueryRow(r.Context(), `SELECT count(DISTINCT recall_code) FROM vehicle_recalls`).Scan(&recallCodes)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.AdminOverview(navFor(r.Context(), a.users), active, deactivated, dealers, rules, sessions).Render(r.Context(), w)
+	_ = templates.AdminOverview(navFor(r.Context(), a.users), active, deactivated, dealers, rules, sessions, recallCodes).Render(r.Context(), w)
+}
+
+// --- recalls ---
+
+// recallsList aggregates the recall master + current_cases to show
+// the operator a scoreboard: per recall code, how many VINs are
+// affected and how many of those VINs already have at least one
+// open/closed case. Single GROUP BY query, ordered by VINCount DESC
+// so the most-applied recalls float to the top.
+func (a *adminHandlers) recallsList(w http.ResponseWriter, r *http.Request) {
+	rows, err := a.pool.Query(r.Context(), `
+		WITH vin_status AS (
+			SELECT vr.recall_code,
+			       vr.vin,
+			       BOOL_OR(c.status IN ('triage','classified')) AS has_open,
+			       count(c.id) FILTER (WHERE c.status IN ('triage','classified')) AS open_cnt,
+			       count(c.id) FILTER (WHERE c.status = 'closed') AS closed_cnt
+			FROM vehicle_recalls vr
+			LEFT JOIN current_cases c ON c.vin = vr.vin
+			GROUP BY vr.recall_code, vr.vin
+		)
+		SELECT recall_code,
+		       count(*)                                  AS vin_count,
+		       count(*) FILTER (WHERE has_open)          AS vins_with_open,
+		       COALESCE(sum(open_cnt), 0)                AS open_cases,
+		       COALESCE(sum(closed_cnt), 0)              AS closed_cases
+		FROM vin_status
+		GROUP BY recall_code
+		ORDER BY vin_count DESC, recall_code ASC
+	`)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	defer rows.Close()
+	var items []templates.AdminRecallSummary
+	for rows.Next() {
+		var s templates.AdminRecallSummary
+		if err := rows.Scan(&s.Code, &s.VINCount, &s.VINsWithOpenCase, &s.OpenCases, &s.ClosedCases); err != nil {
+			httpErr(w, err)
+			return
+		}
+		items = append(items, s)
+	}
+	if err := rows.Err(); err != nil {
+		httpErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = templates.AdminRecallsPage(navFor(r.Context(), a.users), items).Render(r.Context(), w)
+}
+
+// recallDetail lists every VIN tagged with a given recall code,
+// ordered by "has open cases first" so urgent rows surface to the
+// top. Capped at 500 rows: a recall touching > 500 VINs is rare
+// enough that pagination is a follow-up if it ever comes up.
+const recallDetailCap = 500
+
+func (a *adminHandlers) recallDetail(w http.ResponseWriter, r *http.Request) {
+	code := strings.TrimSpace(r.PathValue("code"))
+	if code == "" {
+		http.NotFound(w, r)
+		return
+	}
+	rows, err := a.pool.Query(r.Context(), `
+		SELECT v.vin,
+		       m.name                                                          AS model_name,
+		       v.color,
+		       v.sold_at,
+		       count(c.id) FILTER (WHERE c.status IN ('triage','classified')) AS open_cases,
+		       count(c.id)                                                     AS total_cases,
+		       (SELECT id          FROM current_cases x WHERE x.vin = v.vin ORDER BY x.opened_at DESC LIMIT 1) AS latest_id,
+		       (SELECT case_number FROM current_cases x WHERE x.vin = v.vin ORDER BY x.opened_at DESC LIMIT 1) AS latest_num
+		FROM vehicle_recalls vr
+		JOIN vehicles       v ON v.vin       = vr.vin
+		JOIN vehicle_models m ON m.code      = v.model_code
+		LEFT JOIN current_cases c ON c.vin   = v.vin
+		WHERE vr.recall_code = $1
+		GROUP BY v.vin, m.name, v.color, v.sold_at
+		ORDER BY (count(c.id) FILTER (WHERE c.status IN ('triage','classified'))) DESC,
+		         v.vin ASC
+		LIMIT $2
+	`, code, recallDetailCap+1) // +1 so we know if we hit the cap
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	defer rows.Close()
+	var out []templates.AdminRecallVINRow
+	for rows.Next() {
+		var x templates.AdminRecallVINRow
+		if err := rows.Scan(&x.VIN, &x.ModelName, &x.Color, &x.SoldAt,
+			&x.OpenCases, &x.TotalCases, &x.LatestCaseID, &x.LatestCaseNumber); err != nil {
+			httpErr(w, err)
+			return
+		}
+		out = append(out, x)
+	}
+	if err := rows.Err(); err != nil {
+		httpErr(w, err)
+		return
+	}
+	capped := false
+	if len(out) > recallDetailCap {
+		out = out[:recallDetailCap]
+		capped = true
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = templates.AdminRecallDetailPage(navFor(r.Context(), a.users), code, out, capped).Render(r.Context(), w)
 }
 
 // --- users ---
