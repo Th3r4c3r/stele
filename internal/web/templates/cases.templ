@@ -33,10 +33,13 @@ func (c CaseRow) Display() string {
 	return fmt.Sprintf("C-%d", c.Number)
 }
 
-// UserOption is a (id, label) pair for transfer dropdowns.
+// UserOption is a (id, label) pair for transfer dropdowns. OpenCount
+// is optional: only the assignee chip set fills it; transfer-dropdown
+// callers leave it 0.
 type UserOption struct {
-	ID    uuid.UUID
-	Label string
+	ID        uuid.UUID
+	Label     string
+	OpenCount int
 }
 
 // TimelineEntry is one row of the per-case event timeline.
@@ -104,7 +107,10 @@ templ CasesListBody(
 ) {
 	<section class="page-head">
 		<h1>Fault cases</h1>
-		<a class="btn primary" href="/cases/new">New case</a>
+		<div class="page-head-actions">
+			<a class="btn" href={ templ.URL(casesCSVHref(activeTab, kindFilter, assigneeFilter)) }>Export CSV</a>
+			<a class="btn primary" href="/cases/new">New case</a>
+		</div>
 	</section>
 	<nav class="tabs">
 		@tab("/cases?tab=mine", "My cases", len(mine), activeTab == "mine")
@@ -147,24 +153,34 @@ templ CasesListBody(
 }
 
 // assigneeFilterChips renders the assignee chip set for a status tab.
-// "All" / "Unassigned" (= ops generalist by convention, see ADR-008 follow-up)
-// / one chip per user.
+// Each user chip shows the open-cases count to the right so a busy
+// queue is visible at a glance.
 templ assigneeFilterChips(active string, tabName string, users []UserOption) {
 	<div class="kindfilter">
-		<span class="muted">Assignee:</span>
-		@assigneeChip("", "All", active == "" || active == "all", tabName)
-		@assigneeChip("unassigned", "Ops inbox", active == "unassigned", tabName)
+		<span class="filter-label">Assignee</span>
+		@assigneeChip("", "All", 0, active == "" || active == "all", tabName)
+		@assigneeChip("unassigned", "Ops inbox", 0, active == "unassigned", tabName)
 		for _, u := range users {
-			@assigneeChip(u.ID.String(), u.Label, active == u.ID.String(), tabName)
+			@assigneeChip(u.ID.String(), firstWord(u.Label), u.OpenCount, active == u.ID.String(), tabName)
 		}
 	</div>
 }
 
-templ assigneeChip(value string, label string, active bool, tabName string) {
+templ assigneeChip(value string, label string, count int, active bool, tabName string) {
 	if active {
-		<a class="chip active" href={ templ.URL(assigneeChipHref(value, tabName)) }>{ label }</a>
+		<a class="chip active" href={ templ.URL(assigneeChipHref(value, tabName)) }>
+			{ label }
+			if count > 0 {
+				<span class="chip-count">{ fmt.Sprint(count) }</span>
+			}
+		</a>
 	} else {
-		<a class="chip" href={ templ.URL(assigneeChipHref(value, tabName)) }>{ label }</a>
+		<a class="chip" href={ templ.URL(assigneeChipHref(value, tabName)) }>
+			{ label }
+			if count > 0 {
+				<span class="chip-count">{ fmt.Sprint(count) }</span>
+			}
+		</a>
 	}
 }
 
@@ -178,7 +194,7 @@ templ tab(href string, label string, count int, active bool) {
 
 templ kindFilterChips(active string, tabName string) {
 	<div class="kindfilter">
-		<span class="muted">Filter:</span>
+		<span class="filter-label">Kind</span>
 		@kindChip("", "All", active == "", tabName)
 		for _, k := range fault.AllKinds {
 			@kindChip(k, kindLabel(k), active == k, tabName)

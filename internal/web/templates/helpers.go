@@ -55,6 +55,19 @@ func assigneeChipHref(value string, tab string) string {
 	return "/cases?tab=" + tab + "&assignee=" + value
 }
 
+// casesCSVHref points at /cases.csv with the same tab / kind /
+// assignee filters currently active on the list page.
+func casesCSVHref(tab, kind, assignee string) string {
+	q := "?tab=" + tab
+	if kind != "" {
+		q += "&kind=" + kind
+	}
+	if assignee != "" {
+		q += "&assignee=" + assignee
+	}
+	return "/cases.csv" + q
+}
+
 // derefStr returns *s or "" if nil. Useful inside templates.
 func derefStr(s *string) string {
 	if s == nil {
@@ -72,6 +85,16 @@ func triageOrClassifiedDefaultOpen(status string) templ.Attributes {
 		return templ.Attributes{"open": ""}
 	}
 	return templ.Attributes{}
+}
+
+// firstWord returns everything up to the first space. Used by the
+// assignee chip set to shorten "Mario Bossi" -> "Mario" so the chip
+// stays compact. If there is no space, returns the input unchanged.
+func firstWord(s string) string {
+	if i := strings.IndexByte(s, ' '); i > 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // joinComma joins a slice with ", " or returns "—" when empty.

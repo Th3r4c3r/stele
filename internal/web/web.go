@@ -93,6 +93,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("GET /", wrap(h.rootRedirect))
 	mux.Handle("GET /dashboard", wrap(h.dashboardPage))
 	mux.Handle("GET /cases", wrap(h.listCases))
+	mux.Handle("GET /cases.csv", wrap(h.exportCasesCSV))
 	mux.Handle("GET /cases/new", wrap(h.newCaseForm))
 	mux.Handle("POST /cases", wrap(h.createCase))
 	mux.Handle("GET /cases/{id}", wrap(h.showCase))
@@ -221,7 +222,7 @@ func (h *handlers) listCases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userOpts, err := h.userOptions(r.Context())
+	userOpts, err := h.userOptionsWithCounts(r.Context())
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -232,6 +233,39 @@ func (h *handlers) listCases(w http.ResponseWriter, r *http.Request) {
 	_ = templates.CasesListPage(navFor(r.Context(), h.users),
 		triageRows, classifiedRows, closedRows, mineRows,
 		tab, kindFilter, assigneeParam, userOpts).Render(r.Context(), w)
+}
+
+// userOptionsWithCounts returns one entry per active user with their
+// current open-case count (triage + classified). Used by the assignee
+// chip set so each chip shows "Mario · 28".
+func (h *handlers) userOptionsWithCounts(ctx context.Context) ([]templates.UserOption, error) {
+	rows, err := h.pool.Query(ctx, `
+		SELECT u.id, u.name,
+		       COUNT(c.id) FILTER (
+		         WHERE c.status IN ('triage','classified')
+		           AND c.assignee_id = u.id
+		       ) AS open_n
+		FROM users u
+		LEFT JOIN current_cases c ON c.assignee_id = u.id
+		WHERE u.deactivated_at IS NULL
+		GROUP BY u.id, u.name
+		ORDER BY u.name
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("userOptionsWithCounts: %w", err)
+	}
+	defer rows.Close()
+	out := make([]templates.UserOption, 0)
+	for rows.Next() {
+		var u templates.UserOption
+		var openN int
+		if err := rows.Scan(&u.ID, &u.Label, &openN); err != nil {
+			return nil, err
+		}
+		u.OpenCount = openN
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 func ifThenUUID(cond bool, v uuid.UUID) uuid.UUID {
