@@ -233,7 +233,7 @@ func main() {
 		slog.Info("cleaning event log + projections (dev)")
 		_, err := pool.Exec(ctx, `
 			SET session_replication_role = replica;
-			TRUNCATE events, projection_cursors, projection_event_counts, current_cases;
+			TRUNCATE events, projection_cursors, projection_event_counts, current_cases, case_parts;
 			SET session_replication_role = origin;
 		`)
 		if err != nil {
@@ -263,10 +263,31 @@ func main() {
 	store := event.NewPostgresStore(pool)
 	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0xCAFEBABE))
 
+	// Load real VINs + parts from the masters (post ADR-013). If the
+	// masters are empty (fresh DB pre-pilot-import) the seeder falls
+	// back to synthetic VINs and skips part events: analytics queries
+	// will still run, just return empty rows.
+	realVINs, err := loadRealVINs(ctx, pool)
+	if err != nil {
+		slog.Error("load vins", "err", err)
+		os.Exit(1)
+	}
+	realParts, err := loadRealParts(ctx, pool)
+	if err != nil {
+		slog.Error("load parts", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("masters loaded", "vins", len(realVINs), "parts", len(realParts))
+
+	gen := caseGen{
+		store: store, resolver: resolver, openerID: yan.ID,
+		vins: realVINs, parts: realParts,
+	}
+
 	start := time.Now()
 	totalEvents := 0
 	for i := 0; i < *count; i++ {
-		_, evs, err := generateCase(ctx, store, resolver, yan.ID, r)
+		_, evs, err := gen.generate(ctx, r)
 		if err != nil {
 			slog.Error("generate", "i", i, "err", err)
 			os.Exit(1)
@@ -336,13 +357,57 @@ func seedMaster(ctx context.Context, ur *user.Repo, dr *dealer.Repo, res *fault.
 	return nil
 }
 
-func generateCase(ctx context.Context, store *event.PostgresStore, resolver fault.Resolver, openerID uuid.UUID, r *rand.Rand) (uuid.UUID, int, error) {
+// partMaster carries the bits the seeder needs from the parts table.
+type partMaster struct {
+	PN       string
+	Price    float64 // 0 when null in master
+}
+
+// caseGen bundles the dependencies a single case generation needs.
+// Pulling them into a struct avoids the long parameter list as the
+// seeder grows (note, classify, parts, close).
+type caseGen struct {
+	store    *event.PostgresStore
+	resolver fault.Resolver
+	openerID uuid.UUID
+	vins     []string     // empty -> seeder uses random VINs
+	parts    []partMaster // empty -> seeder skips part events
+}
+
+// pickVIN returns a real VIN from the master when available, otherwise
+// a synthetic one. This is what makes M10 analytics queries (joining
+// case.vin -> vehicles -> model) actually return rows.
+func (g caseGen) pickVIN(r *rand.Rand) string {
+	if len(g.vins) > 0 {
+		return g.vins[r.IntN(len(g.vins))]
+	}
+	return randomVIN(r)
+}
+
+// kindToPartKind maps case classification to the closed enum allowed
+// on PartReplaced.Kind. Returns ("", false) for kinds without cost
+// attribution (recall handled via campaign, unrelated/education have
+// no parts swapped).
+func kindToPartKind(caseKind string) (string, bool) {
+	switch caseKind {
+	case fault.KindWarranty:
+		return fault.PartKindWarranty, true
+	case fault.KindGoodwill:
+		return fault.PartKindGoodwill, true
+	case fault.KindOutOfWarranty:
+		return fault.PartKindOutOfWarranty, true
+	default:
+		return "", false
+	}
+}
+
+func (g caseGen) generate(ctx context.Context, r *rand.Rand) (uuid.UUID, int, error) {
 	dealerCode := seedDealers[r.IntN(len(seedDealers))].Code
 	fc := pick(r, faultCodes)
 	desc := pick(r, descriptions)
 
-	id, err := fault.OpenCase(ctx, store, resolver, openerID, fault.CaseOpened{
-		Dealer: dealerCode, VIN: randomVIN(r), FaultCode: fc, Description: desc,
+	id, err := fault.OpenCase(ctx, g.store, g.resolver, g.openerID, fault.CaseOpened{
+		Dealer: dealerCode, VIN: g.pickVIN(r), FaultCode: fc, Description: desc,
 	})
 	if err != nil {
 		return uuid.Nil, 0, fmt.Errorf("open: %w", err)
@@ -351,7 +416,7 @@ func generateCase(ctx context.Context, store *event.PostgresStore, resolver faul
 
 	noteCount := 1 + r.IntN(5)
 	for i := 0; i < noteCount; i++ {
-		err := fault.AddNote(ctx, store, id, fault.NoteAdded{
+		err := fault.AddNote(ctx, g.store, id, fault.NoteAdded{
 			Author: pick(r, noteAuthors),
 			Text:   pick(r, noteSnippets),
 		})
@@ -361,10 +426,11 @@ func generateCase(ctx context.Context, store *event.PostgresStore, resolver faul
 		events++
 	}
 
+	var caseKind string
 	if r.Float64() < 0.80 {
-		k := pickKind(r)
-		err := fault.Classify(ctx, store, id, fault.Classified{
-			Kind: k, Reasoning: pick(r, reasoningByKind[k]),
+		caseKind = pickKind(r)
+		err := fault.Classify(ctx, g.store, id, fault.Classified{
+			Kind: caseKind, Reasoning: pick(r, reasoningByKind[caseKind]),
 		})
 		if err != nil {
 			return id, events, fmt.Errorf("classify: %w", err)
@@ -372,8 +438,21 @@ func generateCase(ctx context.Context, store *event.PostgresStore, resolver faul
 		events++
 	}
 
+	// Part events: only when the case is classified into a kind with
+	// cost attribution AND the parts master is populated. Probability
+	// 50% means roughly 0.80 * (warranty+goodwill+ofw share, ~0.65) *
+	// 0.50 = ~26% of cases carry at least one part event. Enough to
+	// stress analytics queries without flooding the timeline.
+	if caseKind != "" && len(g.parts) > 0 && r.Float64() < 0.50 {
+		evs, err := g.emitParts(ctx, id, caseKind, r)
+		if err != nil {
+			return id, events, fmt.Errorf("parts: %w", err)
+		}
+		events += evs
+	}
+
 	if r.Float64() < 0.90 {
-		err := fault.CloseCase(ctx, store, id, fault.CaseClosed{
+		err := fault.CloseCase(ctx, g.store, id, fault.CaseClosed{
 			Resolution: pick(r, resolutions),
 			ClosedBy:   pick(r, noteAuthors),
 		})
@@ -383,4 +462,80 @@ func generateCase(ctx context.Context, store *event.PostgresStore, resolver faul
 		events++
 	}
 	return id, events, nil
+}
+
+// emitParts appends 1-2 PartReplaced/PartQuoted events on the case.
+// For out_of_warranty kinds we flip a coin between Replaced (customer
+// paid, repair done) and Quoted (estimate only): both are realistic
+// outcomes and let the analytics layer differentiate them.
+func (g caseGen) emitParts(ctx context.Context, caseID uuid.UUID, caseKind string, r *rand.Rand) (int, error) {
+	partKind, ok := kindToPartKind(caseKind)
+	if !ok {
+		return 0, nil
+	}
+	n := 1 + r.IntN(2) // 1 or 2 part lines per case
+	events := 0
+	for i := 0; i < n; i++ {
+		p := g.parts[r.IntN(len(g.parts))]
+		qty := 1 + r.IntN(2) // 1 or 2 units
+		// Quote vs Replace: for out_of_warranty cases, 40% are just
+		// quotes (customer never signed off). Warranty/goodwill are
+		// always replacements.
+		if partKind == fault.PartKindOutOfWarranty && r.Float64() < 0.40 {
+			price := p.Price
+			if price == 0 {
+				price = 50 + r.Float64()*450 // fallback 50-500 EUR
+			}
+			amount := price * float64(qty)
+			if err := fault.RecordPartQuoted(ctx, g.store, caseID, g.openerID, p.PN, qty, amount); err != nil {
+				return events, err
+			}
+		} else {
+			if err := fault.RecordPartReplaced(ctx, g.store, caseID, g.openerID, p.PN, qty, partKind, ""); err != nil {
+				return events, err
+			}
+		}
+		events++
+	}
+	return events, nil
+}
+
+// loadRealVINs pulls every VIN from the vehicles master. Empty slice
+// when the master is empty (pre-pilot-import). The full list fits
+// comfortably in RAM at pilot scale (~38k VINs ~ 700 KiB).
+func loadRealVINs(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
+	rows, err := pool.Query(ctx, `SELECT vin FROM vehicles`)
+	if err != nil {
+		return nil, fmt.Errorf("load vins: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// loadRealParts returns the PN + reference price for every row in the
+// parts master. NULL price -> 0; emitParts falls back to a random
+// range when it needs an amount for a quote.
+func loadRealParts(ctx context.Context, pool *pgxpool.Pool) ([]partMaster, error) {
+	rows, err := pool.Query(ctx, `SELECT pn, COALESCE(price_eur, 0) FROM parts`)
+	if err != nil {
+		return nil, fmt.Errorf("load parts: %w", err)
+	}
+	defer rows.Close()
+	var out []partMaster
+	for rows.Next() {
+		var p partMaster
+		if err := rows.Scan(&p.PN, &p.Price); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
