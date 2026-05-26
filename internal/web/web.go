@@ -91,7 +91,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 
 	// Authenticated
 	mux.Handle("GET /", wrap(h.rootRedirect))
-	mux.Handle("GET /claims", wrap(h.legacyClaimsRedirect))
+	mux.Handle("GET /dashboard", wrap(h.dashboardPage))
 	mux.Handle("GET /cases", wrap(h.listCases))
 	mux.Handle("GET /cases/new", wrap(h.newCaseForm))
 	mux.Handle("POST /cases", wrap(h.createCase))
@@ -143,11 +143,7 @@ func (h *handlers) rootRedirect(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.Redirect(w, r, "/cases", http.StatusFound)
-}
-
-func (h *handlers) legacyClaimsRedirect(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/cases", http.StatusMovedPermanently)
+	http.Redirect(w, r, "/dashboard", http.StatusFound)
 }
 
 func (h *handlers) listCases(w http.ResponseWriter, r *http.Request) {
