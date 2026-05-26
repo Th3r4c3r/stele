@@ -84,6 +84,17 @@ runs on the Hetzner instance at a URL Yan can open.
 - Projection joins: "claims by dealer", "claims for VIN".
 - Synthetic dataset extended.
 
+## M7 — Dashboard + cleanup pass (DONE 2026-05-26)
+- `/dashboard` page: 4 KPI cards (Total open, My open, Opened 7d, Closed 7d)
+  + Activity sparkline (inline SVG, 7 bars) + Classification mix +
+  Queue per assignee + Top 5 dealers (last 30 days). ✅
+- Topbar gains a Dashboard link (first); `/` now redirects to /dashboard. ✅
+- `/debug/event`, `/debug/events`, `/debug/projections` removed
+  (covered by dashboard + replay command). ✅
+- `/claims` legacy redirect dropped. ✅
+- 8 duplicate assignment_rules deactivated via deploy/cleanup-rules.sql. ✅
+- Live: dashboard rendering with seeded data; queries < 50 ms.
+
 ## M6 — Global search (DONE 2026-05-25)
 - Topbar search input (every authenticated page). ✅
 - /search?q=... grouped results: Cases / Notes / Documents. ✅
