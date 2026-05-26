@@ -210,7 +210,6 @@ templ casesTable(rows []CaseRow, withKind bool, withAssignee bool) {
 					<th>Assignee</th>
 				}
 				<th>Notes</th>
-				<th></th>
 			</tr>
 		</thead>
 		<tbody>
@@ -240,7 +239,6 @@ templ casesTable(rows []CaseRow, withKind bool, withAssignee bool) {
 						</td>
 					}
 					<td>{ fmt.Sprint(c.NoteCount) }</td>
-					<td><a href={ templ.URL("/cases/" + c.ID.String()) }>Open</a></td>
 				</tr>
 			}
 		</tbody>
