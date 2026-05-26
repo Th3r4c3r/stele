@@ -52,6 +52,7 @@ templ AdminOverview(nav NavUser, activeUsers, deactivatedUsers, dealers, rules, 
 			<li>Vehicles &amp; models master — <a href="/admin/vehicles">manage</a></li>
 			<li>Parts catalog — <a href="/admin/parts">manage</a></li>
 			<li><strong>{ fmt.Sprint(recallCodes) }</strong> recall codes — <a href="/admin/recalls">report</a></li>
+			<li>Admin actions log — <a href="/admin/audit">audit</a></li>
 			<li><strong>{ fmt.Sprint(sessions) }</strong> active sessions</li>
 		</ul>
 	}

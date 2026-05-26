@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Th3r4c3r/stele/internal/audit"
 	"github.com/Th3r4c3r/stele/internal/auth"
 	"github.com/Th3r4c3r/stele/internal/dealer"
 	"github.com/Th3r4c3r/stele/internal/fault"
@@ -28,6 +29,7 @@ type adminHandlers struct {
 	resets     *auth.ResetTokens
 	mailSender mail.Sender
 	baseURL    string
+	audit      *audit.Repo // set by Mount; used by auditList read path
 }
 
 func (a *adminHandlers) overview(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +214,7 @@ func (a *adminHandlers) usersCreate(w http.ResponseWriter, r *http.Request) {
 	link := a.baseURL + "/reset?token=" + token
 	_ = a.mailSender.Send(created.Email, "Stele — set your password",
 		"Hi "+created.Name+",\n\nAn admin invited you to Stele.\nUse this link to choose your password (valid for 1 hour):\n"+link+"\n")
+	audit.SetSummary(r.Context(), "invited user "+created.Email+" (role "+created.Role+")")
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
@@ -281,6 +284,7 @@ func (a *adminHandlers) userUpdate(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	audit.SetSummary(r.Context(), "updated user "+existing.Email+" (role "+existing.Role+")")
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
@@ -302,6 +306,7 @@ func (a *adminHandlers) userResetEmail(w http.ResponseWriter, r *http.Request) {
 	link := a.baseURL + "/reset?token=" + token
 	_ = a.mailSender.Send(u.Email, "Stele — set your password",
 		"Hi "+u.Name+",\n\nAn admin requested a password reset.\nUse this link (valid for 1 hour):\n"+link+"\n")
+	audit.SetSummary(r.Context(), "sent password-reset email to "+u.Email)
 	http.Redirect(w, r, "/admin/users/"+id.String(), http.StatusSeeOther)
 }
 
@@ -315,6 +320,11 @@ func (a *adminHandlers) userDeactivate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = a.sessions.InvalidateAllForUser(r.Context(), id)
+	if u, err := a.users.ByID(r.Context(), id); err == nil {
+		audit.SetSummary(r.Context(), "deactivated user "+u.Email+" (sessions revoked)")
+	} else {
+		audit.SetSummary(r.Context(), "deactivated user "+id.String())
+	}
 	http.Redirect(w, r, "/admin/users/"+id.String(), http.StatusSeeOther)
 }
 
@@ -326,6 +336,11 @@ func (a *adminHandlers) userReactivate(w http.ResponseWriter, r *http.Request) {
 	if err := a.users.Reactivate(r.Context(), id); err != nil {
 		httpErr(w, err)
 		return
+	}
+	if u, err := a.users.ByID(r.Context(), id); err == nil {
+		audit.SetSummary(r.Context(), "reactivated user "+u.Email)
+	} else {
+		audit.SetSummary(r.Context(), "reactivated user "+id.String())
 	}
 	http.Redirect(w, r, "/admin/users/"+id.String(), http.StatusSeeOther)
 }
@@ -389,6 +404,8 @@ func (a *adminHandlers) rulesCreate(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	audit.SetSummary(r.Context(), fmt.Sprintf("created/updated rule %q (priority %d, prefix=%q region=%q)",
+		data.Name, priority, data.MatchFaultPrefix, data.MatchDealerRegion))
 	http.Redirect(w, r, "/admin/rules", http.StatusSeeOther)
 }
 
@@ -479,7 +496,32 @@ func (a *adminHandlers) dealersCreate(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	audit.SetSummary(r.Context(), "created/updated dealer "+data.Code+" "+data.Name+" ("+data.Region+"/"+data.Country+")")
 	http.Redirect(w, r, "/admin/dealers", http.StatusSeeOther)
+}
+
+// --- audit log ---
+
+// auditList renders the most recent admin actions. Read-only; the
+// audit table is append-only so a redaction flow is not needed for
+// the pilot. Cap at 200 to keep the page responsive without paging.
+func (a *adminHandlers) auditList(w http.ResponseWriter, r *http.Request) {
+	const cap = 200
+	entries, err := a.audit.List(r.Context(), cap)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	rows := make([]templates.AdminAuditRow, len(entries))
+	for i, e := range entries {
+		rows[i] = templates.AdminAuditRow{
+			ID: e.ID, At: e.At, ActorID: e.ActorID, ActorEmail: e.ActorEmail,
+			Method: e.Method, Path: e.Path, Status: e.Status,
+			Summary: e.Summary, IP: e.IP, UserAgent: e.UserAgent,
+		}
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = templates.AdminAuditPage(navFor(r.Context(), a.users), rows, cap).Render(r.Context(), w)
 }
 
 // --- shared helpers ---

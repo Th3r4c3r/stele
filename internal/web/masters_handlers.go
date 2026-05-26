@@ -1,10 +1,12 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Th3r4c3r/stele/internal/audit"
 	"github.com/Th3r4c3r/stele/internal/part"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
 	"github.com/Th3r4c3r/stele/internal/vehicle"
@@ -42,6 +44,8 @@ func (m *mastersHandlers) vehiclesImport(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	audit.SetSummary(r.Context(), fmt.Sprintf("imported vehicles CSV %s: +%d / ~%d / skip %d",
+		report.Filename, report.RowsInserted, report.RowsUpdated, report.RowsSkipped))
 	m.renderVehicles(w, r, &report)
 }
 
@@ -58,6 +62,8 @@ func (m *mastersHandlers) vehiclesImportModels(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	audit.SetSummary(r.Context(), fmt.Sprintf("imported vehicle_models CSV %s: +%d / ~%d / skip %d",
+		report.Filename, report.RowsInserted, report.RowsUpdated, report.RowsSkipped))
 	m.renderVehicles(w, r, &report)
 }
 
@@ -131,6 +137,8 @@ func (m *mastersHandlers) partsImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	audit.SetSummary(r.Context(), fmt.Sprintf("imported parts CSV %s: +%d / ~%d / skip %d",
+		report.Filename, report.RowsInserted, report.RowsUpdated, report.RowsSkipped))
 	m.renderParts(w, r, &report)
 }
 

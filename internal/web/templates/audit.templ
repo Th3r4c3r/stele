@@ -1,0 +1,67 @@
+package templates
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// AdminAuditRow mirrors audit.Entry for the template. The actor is
+// always shown by email (denormalised on insert) so deactivated or
+// renamed users still produce stable audit lines.
+type AdminAuditRow struct {
+	ID         uuid.UUID
+	At         time.Time
+	ActorID    *uuid.UUID
+	ActorEmail string
+	Method     string
+	Path       string
+	Status     int
+	Summary    string
+	IP         string
+	UserAgent  string
+}
+
+// AdminAuditPage shows the most recent admin actions, newest first.
+templ AdminAuditPage(nav NavUser, rows []AdminAuditRow, limit int) {
+	@AdminShell("Admin · audit log", nav) {
+		<section class="page-head">
+			<h1>Audit log</h1>
+			<a href="/admin" class="btn">Back</a>
+		</section>
+		<p class="muted">Last { fmt.Sprint(limit) } successful admin mutations. Logged by the AuditAdminActions middleware; failed (4xx/5xx) requests are not recorded.</p>
+		if len(rows) == 0 {
+			<p class="muted">No admin actions recorded yet.</p>
+		} else {
+			<table class="claims compact">
+				<thead>
+					<tr>
+						<th>When (UTC)</th>
+						<th>Actor</th>
+						<th>Action</th>
+						<th>Endpoint</th>
+						<th>IP</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, r := range rows {
+						<tr>
+							<td><small><code>{ r.At.UTC().Format("2006-01-02 15:04:05") }</code></small></td>
+							<td>{ r.ActorEmail }</td>
+							<td>
+								if r.Summary != "" {
+									{ r.Summary }
+								} else {
+									<span class="muted">{ r.Method } { r.Path }</span>
+								}
+							</td>
+							<td><small class="muted">{ r.Method } { r.Path } ({ fmt.Sprint(r.Status) })</small></td>
+							<td><small class="muted">{ r.IP }</small></td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
+}

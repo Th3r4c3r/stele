@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Th3r4c3r/stele/internal/audit"
 	"github.com/Th3r4c3r/stele/internal/auth"
 	"github.com/Th3r4c3r/stele/internal/dealer"
 	"github.com/Th3r4c3r/stele/internal/document"
@@ -86,10 +87,16 @@ func Mount(mux *http.ServeMux, d Deps) {
 		users:    d.Users,
 	}
 
+	auditRepo := audit.NewRepo(d.Pool)
+	adm.audit = auditRepo
 	authMW := NewAuthMiddleware(d.Sessions, d.Users)
 	wrap := func(fn http.HandlerFunc) http.Handler { return authMW.Wrap(fn) }
+	// wrapAdmin: auth -> admin-only -> audit -> handler. Audit sits
+	// closest to the handler so the recorded actor is the one who
+	// passed auth + admin checks, not "anonymous".
 	wrapAdmin := func(fn http.HandlerFunc) http.Handler {
-		return authMW.Wrap(AdminOnly(d.Users, http.HandlerFunc(fn)))
+		return authMW.Wrap(AdminOnly(d.Users,
+			AuditAdminActions(auditRepo, d.Users, http.HandlerFunc(fn))))
 	}
 
 	// Public (auth middleware skips publicPath)
@@ -144,6 +151,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /admin/parts/import", wrapAdmin(masters.partsImport))
 	mux.Handle("GET /admin/recalls", wrapAdmin(adm.recallsList))
 	mux.Handle("GET /admin/recalls/{code}", wrapAdmin(adm.recallDetail))
+	mux.Handle("GET /admin/audit", wrapAdmin(adm.auditList))
 
 	staticFS, err := fs.Sub(static.FS, ".")
 	if err != nil {
