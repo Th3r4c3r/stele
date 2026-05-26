@@ -245,6 +245,21 @@ templ casesTable(rows []CaseRow, withKind bool, withAssignee bool) {
 	</table>
 }
 
+// statusBadge renders the case status with a semantic colour + icon.
+// Centralised so list, search and detail stay in sync.
+templ statusBadge(status string) {
+	switch status {
+		case "triage":
+			<span class="badge status-triage" title="Awaiting classification">⏳ triage</span>
+		case "classified":
+			<span class="badge status-classified" title="Classified, work in progress">⚙ classified</span>
+		case "closed":
+			<span class="badge status-closed" title="Closed">✓ closed</span>
+		default:
+			<span class="badge">{ status }</span>
+	}
+}
+
 templ kindBadge(kind string) {
 	switch kind {
 		case fault.KindWarranty:
@@ -421,42 +436,68 @@ templ UploadForm(caseID uuid.UUID) {
 }
 
 templ caseSummary(c CaseRow) {
-	<dl class="summary">
-		<dt>Status</dt>
-		<dd>
-			switch c.Status {
-				case "triage":
-					<span class="badge status-triage">triage</span>
-				case "classified":
-					<span class="badge status-classified">classified</span>
-				case "closed":
-					<span class="badge status-closed">closed</span>
+	<section class="case-summary">
+		<div class="case-summary-primary">
+			<div class="cs-cell">
+				<div class="cs-label">Status</div>
+				<div class="cs-value">@statusBadge(c.Status)</div>
+			</div>
+			<div class="cs-cell">
+				<div class="cs-label">Kind</div>
+				<div class="cs-value">
+					if c.Kind != nil {
+						@kindBadge(*c.Kind)
+					} else {
+						<span class="muted">not classified</span>
+					}
+				</div>
+			</div>
+			<div class="cs-cell">
+				<div class="cs-label">Assignee</div>
+				<div class="cs-value">
+					if c.AssigneeName != "" {
+						<strong>{ c.AssigneeName }</strong>
+					} else {
+						<span class="muted">unassigned</span>
+					}
+				</div>
+			</div>
+		</div>
+		<div class="case-summary-grid">
+			<div class="cs-cell">
+				<div class="cs-label">Dealer</div>
+				<div class="cs-value">{ c.Dealer }</div>
+			</div>
+			<div class="cs-cell">
+				<div class="cs-label">VIN</div>
+				<div class="cs-value"><code>{ c.VIN }</code></div>
+			</div>
+			<div class="cs-cell">
+				<div class="cs-label">Fault code</div>
+				<div class="cs-value">{ c.FaultCode }</div>
+			</div>
+			<div class="cs-cell">
+				<div class="cs-label">Opened</div>
+				<div class="cs-value">{ c.OpenedAt.Format("2006-01-02 15:04") }</div>
+			</div>
+			if c.ClassifiedAt != nil {
+				<div class="cs-cell">
+					<div class="cs-label">Classified at</div>
+					<div class="cs-value">{ c.ClassifiedAt.Format("2006-01-02 15:04") }</div>
+				</div>
 			}
-		</dd>
-		if c.Kind != nil {
-			<dt>Kind</dt>
-			<dd>@kindBadge(*c.Kind)</dd>
-		}
-		<dt>Assignee</dt>
-		<dd>
-			if c.AssigneeName != "" {
-				<strong>{ c.AssigneeName }</strong>
-			} else {
-				<span class="muted">unassigned</span>
+			if c.ClosedAt != nil {
+				<div class="cs-cell">
+					<div class="cs-label">Closed at</div>
+					<div class="cs-value">{ c.ClosedAt.Format("2006-01-02 15:04") }</div>
+				</div>
 			}
-		</dd>
-		<dt>Dealer</dt><dd>{ c.Dealer }</dd>
-		<dt>VIN</dt><dd><code>{ c.VIN }</code></dd>
-		<dt>Fault code</dt><dd>{ c.FaultCode }</dd>
-		<dt>Description</dt><dd>{ c.Description }</dd>
-		<dt>Opened</dt><dd>{ c.OpenedAt.Format(time.RFC3339) }</dd>
-		if c.ClassifiedAt != nil {
-			<dt>Classified</dt><dd>{ c.ClassifiedAt.Format(time.RFC3339) }</dd>
-		}
-		if c.ClosedAt != nil {
-			<dt>Closed</dt><dd>{ c.ClosedAt.Format(time.RFC3339) }</dd>
-		}
-	</dl>
+			<div class="cs-cell cs-cell-wide">
+				<div class="cs-label">Description</div>
+				<div class="cs-value">{ c.Description }</div>
+			</div>
+		</div>
+	</section>
 }
 
 // CaseTimeline is the per-case event list (oldest first).
