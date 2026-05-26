@@ -60,6 +60,22 @@ type SMTPConfig struct {
 type SMTPSender struct{ cfg SMTPConfig }
 
 func (s *SMTPSender) Send(to, subject, body string) error {
+	err := s.send(to, subject, body)
+	if err != nil {
+		// Handlers tend to `_ = Send(...)` to keep the redirect path
+		// fast; we still want a breadcrumb in the logs so silent
+		// delivery failures (unverified sender, bad credentials,
+		// rate limit) are diagnosable post-hoc.
+		slog.Error("mail.SMTPSender send failed",
+			"to", to, "from", s.cfg.From, "host", s.cfg.Host, "err", err)
+	} else {
+		slog.Info("mail.SMTPSender sent",
+			"to", to, "from", s.cfg.From, "subject", subject)
+	}
+	return err
+}
+
+func (s *SMTPSender) send(to, subject, body string) error {
 	if to == "" {
 		return errors.New("mail: empty recipient")
 	}
