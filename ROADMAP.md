@@ -123,6 +123,48 @@ runs on the Hetzner instance at a URL Yan can open.
 - Live: https://stele.178-105-44-164.nip.io/admin/vehicles (empty,
   ready for Yan to import real Vmoto CSVs).
 
+## M9.1 — Parts notes + add-part form preview (DONE 2026-05-26)
+- Migration 0010: parts.notes TEXT NULL. ✅
+- internal/part: Notes field on Part struct, optional `notes` column in
+  CSV importer. ✅
+- Case detail add-part form: picking a PN now shows live preview with
+  master description, reference price labelled "VAT excluded", and any
+  operational notes (supersession, alternate codes, legacy flags).
+  Inline ~15-line script reading data-* attributes; no JS deps, no
+  server round-trip per keystroke. ✅
+- Quote amount field label updated; reference price prefilled as
+  placeholder for convenience. ✅
+
+## M9.2 — Vehicles enrichment + Vmoto VIN list ingestion (DONE 2026-05-26)
+- Migration 0011: vehicles + color, controller_sn, motor_sn,
+  battery1_sn, battery2_sn; new vehicle_recalls(vin, recall_code,
+  recorded_at) PRIMARY KEY (vin, code), ON DELETE CASCADE,
+  index on recall_code. ✅
+- Vehicle struct + ByVIN fetches recalls in a second query.
+  ReplaceRecalls(vin, codes) atomic per-VIN transaction. ✅
+- ImportVehiclesCSV accepts new optional columns and a pipe-separated
+  `recalls` column. Recall column absent = recalls untouched. ✅
+- UI: VIN cell shows color inline with model/year/country; recall
+  badge (amber) when present; serial numbers in a collapsible
+  <details> block. ✅
+- Vmoto data loaded: 43 models, 38,334 vehicles (11,450 with recall
+  codes, 572 with sold_at), from `LISTA VIN VMOTO202604_v4.xlsx`. ✅
+
+## Fix — read-after-write race on new cases (DONE 2026-05-26)
+- createCase now waits up to 2s for current_cases projector to apply
+  CaseOpened before redirecting; showCase also retries for 1s on
+  initial ErrNoRows. Both bounded, ctx-cancellable. ✅
+- Surfaced after M9.2 because UI case creation finally went live with
+  real users. Race was pre-existing in M1 polling design. ✅
+
+## M11 — Recall report (DONE 2026-05-26)
+- /admin/recalls: per recall code, unique VINs affected, VINs with at
+  least one open case (urgent slice), total open + closed cases. ✅
+- /admin/recalls/{code}: per-VIN drill-down ordered by "open cases
+  first", with model + color + sold_at + links to latest case.
+  Capped at 500 with truncation notice. ✅
+- /admin overview card added. ✅
+
 ## M10 — Failure-rate analytics (next)
 - Page joining case_parts + vehicles + parts: "top failing PNs by
   model", "failure rate per fault_code per model", cohort by year.
