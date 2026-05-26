@@ -420,6 +420,12 @@ func (h *handlers) lookupVehicle(ctx context.Context, vin string) *templates.Veh
 		ModelCode:        v.ModelCode,
 		ManufacturedYear: v.ManufacturedYear,
 		Country:          v.Country,
+		Color:            v.Color,
+		ControllerSN:     v.ControllerSN,
+		MotorSN:          v.MotorSN,
+		Battery1SN:       v.Battery1SN,
+		Battery2SN:       v.Battery2SN,
+		Recalls:          v.Recalls,
 	}
 }
 

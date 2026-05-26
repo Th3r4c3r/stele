@@ -33,6 +33,12 @@ type Vehicle struct {
 	ManufacturedYear *int
 	SoldAt           *time.Time
 	Country          *string
+	Color            *string
+	ControllerSN     *string
+	MotorSN          *string
+	Battery1SN       *string
+	Battery2SN       *string
+	Recalls          []string // populated on join lookups via ListRecalls
 }
 
 // ErrNotFound is returned when a lookup misses.
@@ -44,22 +50,53 @@ type Repo struct {
 
 func NewRepo(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
 
-// ByVIN returns the vehicle with its joined model name.
+// ByVIN returns the vehicle with its joined model name. Recalls are
+// fetched in a second query (small bounded list) so callers always
+// see the full picture without a left-join + array_agg dance.
 func (r *Repo) ByVIN(ctx context.Context, vin string) (Vehicle, error) {
 	var v Vehicle
 	err := r.pool.QueryRow(ctx, `
-		SELECT v.vin, v.model_code, m.name, v.manufactured_year, v.sold_at, v.country
+		SELECT v.vin, v.model_code, m.name, v.manufactured_year, v.sold_at, v.country,
+		       v.color, v.controller_sn, v.motor_sn, v.battery1_sn, v.battery2_sn
 		FROM vehicles v
 		JOIN vehicle_models m ON m.code = v.model_code
 		WHERE v.vin = $1
-	`, vin).Scan(&v.VIN, &v.ModelCode, &v.ModelName, &v.ManufacturedYear, &v.SoldAt, &v.Country)
+	`, vin).Scan(&v.VIN, &v.ModelCode, &v.ModelName, &v.ManufacturedYear, &v.SoldAt, &v.Country,
+		&v.Color, &v.ControllerSN, &v.MotorSN, &v.Battery1SN, &v.Battery2SN)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, ErrNotFound
 	}
 	if err != nil {
 		return v, fmt.Errorf("vehicle.ByVIN: %w", err)
 	}
+	rcs, rerr := r.ListRecalls(ctx, vin)
+	if rerr != nil {
+		// Recalls are best-effort enrichment: log via the error chain
+		// but still return the vehicle so the case page doesn't break.
+		return v, fmt.Errorf("vehicle.ByVIN.recalls: %w", rerr)
+	}
+	v.Recalls = rcs
 	return v, nil
+}
+
+// ListRecalls returns recall codes for a VIN, ordered alphabetically
+// so the UI is stable across reloads.
+func (r *Repo) ListRecalls(ctx context.Context, vin string) ([]string, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT recall_code FROM vehicle_recalls WHERE vin = $1 ORDER BY recall_code`, vin)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // ListModels returns all model rows ordered by code (small list).
@@ -108,20 +145,58 @@ func (r *Repo) UpsertModel(ctx context.Context, m Model) error {
 }
 
 // UpsertVehicle inserts or updates a vehicle row by VIN. Idempotent.
+// Recalls are NOT touched here: call ReplaceRecalls separately. This
+// keeps the "core master row" upsert atomic and decouples it from the
+// multi-valued recall set, which has its own idempotency model.
 func (r *Repo) UpsertVehicle(ctx context.Context, v Vehicle) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO vehicles (vin, model_code, manufactured_year, sold_at, country)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO vehicles (vin, model_code, manufactured_year, sold_at, country,
+		                      color, controller_sn, motor_sn, battery1_sn, battery2_sn)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (vin) DO UPDATE
-		   SET model_code = EXCLUDED.model_code,
+		   SET model_code        = EXCLUDED.model_code,
 		       manufactured_year = EXCLUDED.manufactured_year,
-		       sold_at = EXCLUDED.sold_at,
-		       country = EXCLUDED.country
-	`, v.VIN, v.ModelCode, v.ManufacturedYear, v.SoldAt, v.Country)
+		       sold_at           = EXCLUDED.sold_at,
+		       country           = EXCLUDED.country,
+		       color             = EXCLUDED.color,
+		       controller_sn     = EXCLUDED.controller_sn,
+		       motor_sn          = EXCLUDED.motor_sn,
+		       battery1_sn       = EXCLUDED.battery1_sn,
+		       battery2_sn       = EXCLUDED.battery2_sn
+	`, v.VIN, v.ModelCode, v.ManufacturedYear, v.SoldAt, v.Country,
+		v.Color, v.ControllerSN, v.MotorSN, v.Battery1SN, v.Battery2SN)
 	if err != nil {
 		return fmt.Errorf("vehicle.UpsertVehicle %s: %w", v.VIN, err)
 	}
 	return nil
+}
+
+// ReplaceRecalls makes the recall set for a VIN exactly equal to
+// codes. Wrapped in a transaction so a partial reapply never leaves
+// the VIN with a mixture of old + new codes.
+func (r *Repo) ReplaceRecalls(ctx context.Context, vin string, codes []string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("vehicle.ReplaceRecalls begin: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // commit replaces on success
+	if _, err := tx.Exec(ctx, `DELETE FROM vehicle_recalls WHERE vin = $1`, vin); err != nil {
+		return fmt.Errorf("vehicle.ReplaceRecalls delete: %w", err)
+	}
+	seen := map[string]bool{}
+	for _, code := range codes {
+		c := strings.TrimSpace(code)
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO vehicle_recalls (vin, recall_code) VALUES ($1, $2)`,
+			vin, c); err != nil {
+			return fmt.Errorf("vehicle.ReplaceRecalls insert %s: %w", c, err)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // ImportReport summarises a CSV upload result.
@@ -204,7 +279,16 @@ func (r *Repo) ImportModelsCSV(ctx context.Context, body io.Reader) (ImportRepor
 	return rep, nil
 }
 
-// ImportVehiclesCSV reads CSV: vin,model_code,manufactured_year,sold_at,country
+// ImportVehiclesCSV reads CSV with required columns vin,model_code and
+// any of these optional columns in any order:
+//
+//	manufactured_year, sold_at (YYYY-MM-DD), country (ISO 2-letter),
+//	color, controller_sn, motor_sn, battery1_sn, battery2_sn,
+//	recalls (pipe-separated list, e.g. "VRC001|VRC003")
+//
+// When the `recalls` column is present the vehicle's recall set is
+// REPLACED with the listed codes (idempotent), via a per-VIN
+// transaction. Absent or empty cell = no change to recalls.
 func (r *Repo) ImportVehiclesCSV(ctx context.Context, body io.Reader) (ImportReport, error) {
 	var rep ImportReport
 	cr := csv.NewReader(body)
@@ -262,11 +346,40 @@ func (r *Repo) ImportVehiclesCSV(ctx context.Context, body io.Reader) (ImportRep
 			cc := strings.ToUpper(c)
 			v.Country = &cc
 		}
+		if c, ok := optCell(rec, idx, "color"); ok {
+			v.Color = &c
+		}
+		if s, ok := optCell(rec, idx, "controller_sn"); ok {
+			v.ControllerSN = &s
+		}
+		if s, ok := optCell(rec, idx, "motor_sn"); ok {
+			v.MotorSN = &s
+		}
+		if s, ok := optCell(rec, idx, "battery1_sn"); ok {
+			v.Battery1SN = &s
+		}
+		if s, ok := optCell(rec, idx, "battery2_sn"); ok {
+			v.Battery2SN = &s
+		}
 		existed, _ := r.vehicleExists(ctx, v.VIN)
 		if err := r.UpsertVehicle(ctx, v); err != nil {
 			rep.Errors = append(rep.Errors, ImportError{Line: line, Reason: err.Error()})
 			rep.RowsSkipped++
 			continue
+		}
+		// Recalls: only touch the recall set when the column is present
+		// on the CSV. Absent column = leave existing recalls untouched.
+		if _, hasCol := idx["recalls"]; hasCol {
+			raw, _ := optCell(rec, idx, "recalls")
+			var codes []string
+			if raw != "" {
+				codes = strings.Split(raw, "|")
+			}
+			if rerr := r.ReplaceRecalls(ctx, v.VIN, codes); rerr != nil {
+				rep.Errors = append(rep.Errors, ImportError{Line: line, Reason: rerr.Error()})
+				// Vehicle row succeeded; recalls did not. Still count
+				// the vehicle as updated/inserted, but surface the error.
+			}
 		}
 		if existed {
 			rep.RowsUpdated++

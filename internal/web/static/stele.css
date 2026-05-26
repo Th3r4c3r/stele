@@ -398,6 +398,36 @@ dl.summary dd { margin: 0; }
 .cs-value { font-size: 14px; }
 
 /* Vehicle enrichment under the VIN cell. */
+/* Recall badge: drawn on the case-detail VIN cell when the vehicle has
+   one or more recall codes. Yellow-amber to signal "attention required
+   but not blocking", consistent with the rest of the kind/status badge
+   palette. */
+.vehicle-recalls {
+	margin-top: 4px;
+	font-size: 13px;
+}
+.badge.recall-badge {
+	background: #ffe9b3;
+	color: #6e4a00;
+	border: 1px solid #e7c98a;
+	margin-right: 6px;
+}
+/* Serial numbers in a collapsible block: keep them out of the
+   primary scanline (they are 20+ char strings) but one click away. */
+.vehicle-ids {
+	margin-top: 6px;
+	font-size: 12px;
+}
+.vehicle-ids summary { cursor: pointer; color: #444; }
+.vehicle-ids dl.kv {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 2px 12px;
+	margin: 4px 0 0;
+}
+.vehicle-ids dl.kv dt { color: #6c6c6c; }
+.vehicle-ids dl.kv dd { margin: 0; font-family: monospace; word-break: break-all; }
+
 .vehicle-info {
 	margin-top: 4px;
 	font-size: 13px;

@@ -56,6 +56,12 @@ type VehicleInfo struct {
 	ModelCode        string
 	ManufacturedYear *int
 	Country          *string
+	Color            *string
+	ControllerSN     *string
+	MotorSN          *string
+	Battery1SN       *string
+	Battery2SN       *string
+	Recalls          []string // sorted recall codes; empty when none
 }
 
 // CasePartRow is one entry in the case's parts table.
@@ -534,6 +540,9 @@ templ caseSummary(c CaseRow, vehicle *VehicleInfo) {
 						<div class="vehicle-info">
 							<strong>{ vehicle.ModelName }</strong>
 							<small class="muted">{ vehicle.ModelCode }</small>
+							if vehicle.Color != nil {
+								<span class="muted"> &middot; { *vehicle.Color }</span>
+							}
 							if vehicle.ManufacturedYear != nil {
 								<span class="muted"> &middot; { fmt.Sprint(*vehicle.ManufacturedYear) }</span>
 							}
@@ -541,6 +550,36 @@ templ caseSummary(c CaseRow, vehicle *VehicleInfo) {
 								<span class="muted"> &middot; { *vehicle.Country }</span>
 							}
 						</div>
+						if len(vehicle.Recalls) > 0 {
+							<div class="vehicle-recalls">
+								<span class="badge recall-badge" title="Recall codes affecting this VIN">⚠ Recall</span>
+								for i, code := range vehicle.Recalls {
+									if i > 0 {
+										<span class="muted">, </span>
+									}
+									<strong>{ code }</strong>
+								}
+							</div>
+						}
+						if vehicle.ControllerSN != nil || vehicle.MotorSN != nil || vehicle.Battery1SN != nil || vehicle.Battery2SN != nil {
+							<details class="vehicle-ids">
+								<summary>Serial numbers</summary>
+								<dl class="kv">
+									if vehicle.ControllerSN != nil {
+										<dt>Controller</dt><dd><code>{ *vehicle.ControllerSN }</code></dd>
+									}
+									if vehicle.MotorSN != nil {
+										<dt>Motor</dt><dd><code>{ *vehicle.MotorSN }</code></dd>
+									}
+									if vehicle.Battery1SN != nil {
+										<dt>Battery 1</dt><dd><code>{ *vehicle.Battery1SN }</code></dd>
+									}
+									if vehicle.Battery2SN != nil {
+										<dt>Battery 2</dt><dd><code>{ *vehicle.Battery2SN }</code></dd>
+									}
+								</dl>
+							</details>
+						}
 					} else {
 						<small class="muted">VIN not in master <a href="/admin/vehicles">(import)</a></small>
 					}
