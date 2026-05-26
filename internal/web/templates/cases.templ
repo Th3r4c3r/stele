@@ -49,6 +49,32 @@ type TimelineEntry struct {
 	Summary string
 }
 
+// VehicleInfo enriches a case detail when the VIN resolves to a row
+// in the vehicles master. Nil when the VIN is not in the master yet.
+type VehicleInfo struct {
+	ModelName        string
+	ModelCode        string
+	ManufacturedYear *int
+	Country          *string
+}
+
+// CasePartRow is one entry in the case's parts table.
+type CasePartRow struct {
+	PN              string
+	Description     string // joined from parts master
+	Qty             int
+	Kind            string // PartReplaced kind: warranty | goodwill | out_of_warranty | quoted
+	CostEUR         *float64
+	RecordedAt      time.Time
+	IsQuote         bool // true => from PartQuoted; false => from PartReplaced
+}
+
+// PartOption is a (pn, label) pair for the add-part datalist.
+type PartOption struct {
+	PN    string
+	Label string // "PN - description"
+}
+
 // DocumentRow describes one attachment for the case detail view.
 type DocumentRow struct {
 	ID             uuid.UUID
@@ -340,21 +366,31 @@ templ NewCaseForm(data NewCaseFormData) {
 }
 
 // CaseDetailPage renders a single case with its event timeline.
-templ CaseDetailPage(nav NavUser, c CaseRow, timeline []TimelineEntry, users []UserOption, documents []DocumentRow) {
+templ CaseDetailPage(nav NavUser, c CaseRow, timeline []TimelineEntry, users []UserOption, documents []DocumentRow, vehicle *VehicleInfo, parts []CasePartRow, partOptions []PartOption) {
 	@Layout(c.Display(), nav) {
-		@CaseDetailBody(c, timeline, users, documents)
+		@CaseDetailBody(c, timeline, users, documents, vehicle, parts, partOptions)
 	}
 }
 
-templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption, documents []DocumentRow) {
+templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption, documents []DocumentRow, vehicle *VehicleInfo, parts []CasePartRow, partOptions []PartOption) {
 	<section class="page-head">
 		<h1>Case <strong>{ c.Display() }</strong> <span class="muted">&middot; { c.ID.String()[:8] }</span></h1>
 		<a href="/cases" class="btn">Back to list</a>
 	</section>
-	@caseSummary(c)
+	@caseSummary(c, vehicle)
 	<section>
 		<h2>Timeline</h2>
 		@CaseTimeline(timeline)
+	</section>
+	<section>
+		<h2>Parts ({ fmt.Sprint(len(parts)) })</h2>
+		@PartsList(parts)
+		if c.Status != "closed" {
+			<details class="upload-details">
+				<summary>Record a part (replaced or quoted)</summary>
+				@AddPartForm(c.ID, partOptions)
+			</details>
+		}
 	</section>
 	<section>
 		<h2>Documents ({ fmt.Sprint(len(documents)) })</h2>
@@ -451,7 +487,7 @@ templ UploadForm(caseID uuid.UUID) {
 	</form>
 }
 
-templ caseSummary(c CaseRow) {
+templ caseSummary(c CaseRow, vehicle *VehicleInfo) {
 	<section class="case-summary">
 		<div class="case-summary-primary">
 			<div class="cs-cell">
@@ -486,7 +522,23 @@ templ caseSummary(c CaseRow) {
 			</div>
 			<div class="cs-cell">
 				<div class="cs-label">VIN</div>
-				<div class="cs-value"><code>{ c.VIN }</code></div>
+				<div class="cs-value">
+					<code>{ c.VIN }</code>
+					if vehicle != nil {
+						<div class="vehicle-info">
+							<strong>{ vehicle.ModelName }</strong>
+							<small class="muted">{ vehicle.ModelCode }</small>
+							if vehicle.ManufacturedYear != nil {
+								<span class="muted"> &middot; { fmt.Sprint(*vehicle.ManufacturedYear) }</span>
+							}
+							if vehicle.Country != nil {
+								<span class="muted"> &middot; { *vehicle.Country }</span>
+							}
+						</div>
+					} else {
+						<small class="muted">VIN not in master <a href="/admin/vehicles">(import)</a></small>
+					}
+				</div>
 			</div>
 			<div class="cs-cell">
 				<div class="cs-label">Fault code</div>
@@ -638,5 +690,102 @@ templ TransferForm(caseID uuid.UUID, currentAssignee *uuid.UUID, users []UserOpt
 			</select>
 		</label>
 		<button type="submit" class="btn">Transfer</button>
+	</form>
+}
+
+// PartsList renders the case_parts read model rows.
+templ PartsList(parts []CasePartRow) {
+	if len(parts) == 0 {
+		<p class="muted">No parts recorded yet.</p>
+	} else {
+		<table class="claims documents">
+			<thead>
+				<tr>
+					<th>P/N</th>
+					<th>Description</th>
+					<th>Qty</th>
+					<th>Kind</th>
+					<th>Cost (EUR)</th>
+					<th>When</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, p := range parts {
+					<tr>
+						<td><code>{ p.PN }</code></td>
+						<td>{ p.Description }</td>
+						<td>{ fmt.Sprint(p.Qty) }</td>
+						<td>
+							if p.IsQuote {
+								<span class="badge kind-oow">quoted</span>
+							} else {
+								@partKindBadge(p.Kind)
+							}
+						</td>
+						<td>
+							if p.CostEUR != nil {
+								{ fmt.Sprintf("%.2f", *p.CostEUR) }
+							} else {
+								<span class="muted">—</span>
+							}
+						</td>
+						<td>{ p.RecordedAt.Format("2006-01-02 15:04") }</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+templ partKindBadge(kind string) {
+	switch kind {
+		case "warranty":
+			<span class="badge kind-warranty">warranty</span>
+		case "goodwill":
+			<span class="badge kind-goodwill">goodwill</span>
+		case "out_of_warranty":
+			<span class="badge kind-oow">out of warranty</span>
+		default:
+			<span class="badge">{ kind }</span>
+	}
+}
+
+// AddPartForm: a unified form that switches between "replaced" and
+// "quoted" via the action attribute. For replaced, kind picks the
+// cost attribution (warranty/goodwill/out_of_warranty). For quoted,
+// the amount is mandatory.
+templ AddPartForm(caseID uuid.UUID, options []PartOption) {
+	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/parts") } class="form inline">
+		<label>
+			P/N
+			<input name="pn" required list="parts-options" placeholder="e.g. BAT-72V-40AH"/>
+			<datalist id="parts-options">
+				for _, o := range options {
+					<option value={ o.PN }>{ o.Label }</option>
+				}
+			</datalist>
+		</label>
+		<label>
+			Qty
+			<input name="qty" type="number" required min="1" value="1"/>
+		</label>
+		<label>
+			Action
+			<select name="action" required>
+				<option value="replaced_warranty">Replaced under warranty</option>
+				<option value="replaced_goodwill">Replaced as goodwill</option>
+				<option value="replaced_out_of_warranty">Replaced out of warranty</option>
+				<option value="quoted">Quoted (no replacement)</option>
+			</select>
+		</label>
+		<label>
+			Quote amount EUR (only when 'quoted')
+			<input name="quoted_amount_eur" type="number" step="0.01" min="0" placeholder="leave blank for replaced"/>
+		</label>
+		<label>
+			Reason / note
+			<input name="reason" placeholder="optional"/>
+		</label>
+		<button type="submit" class="btn">Record</button>
 	</form>
 }

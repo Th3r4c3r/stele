@@ -31,14 +31,20 @@ truth for project state across sessions.
 - Write at session end: append to `session_log.md`, update `pm_brain.md`
 - When a milestone starts, create `wiki/stele/m<N>_<slug>.md` for working notes
 
-The vmoto-ops vault domain (`wiki/vmoto/`) is the operational context that inspires Stele's
-Phase 1 (warranty patterns). Read it when domain modeling, do not copy real data.
+The vmoto-ops vault domain (`wiki/vmoto/`) is the operational context for Stele. Read it
+when domain modeling. Since ADR-013 you may also lift specific Vmoto facts (model codes,
+P/N catalogues, dealer codes) into Stele via the admin CSV import flow. Owner-level data
+remains out of scope.
 
 ## Working conventions
 
 - **Language:** code, ADRs, repo docs, commit messages in **English**. Conversation with Yan in **Italian**.
 - **No em dashes** anywhere (`—` or `--` as punctuation). Use periods, commas, colons, parens. Hyphens in compound words are fine.
-- **No real Vmoto data** in this repo or in any deployed instance. Synthetic datasets only.
+- **Vmoto pilot data is allowed since ADR-013 (2026-05-26).** Concretely:
+  - Real VIN, model master, parts master, part-replacement events: OK on the deployed instance.
+  - Owner data (name, email, phone, address), invoice numbers, contracts: NOT OK. Stele never sees them.
+  - The repo itself stays clean: no CSV / dump / data dir checked in. Data lives only on the Hetzner host under `~/data/` and `~/backups/`. `.gitignore` enforces `*.csv`, `*.dump`, `/data/`.
+  - The deployment is treated as attenuated-PII surface: SSH hardening + rotated dev password + no public dataset sharing without explicit Yan sign-off.
 - **No spending** without asking Yan. Everything must run on the existing Hetzner CPX22.
 - **No publishing** the repo on GitHub until Yan confirms destination (his personal account vs new org). Ask once when ready to deploy M0.
 - **Commit style:** imperative present tense, short subject (<70 chars), body explains the why. Each PR/commit must be self-contained and self-merge-safe.

@@ -22,10 +22,10 @@ func New(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
 
 // KPIs is the four-card header.
 type KPIs struct {
-	TotalOpen     int
-	MyOpen        int
-	OpenedLast7   int
-	ClosedLast7   int
+	TotalOpen   int
+	MyOpen      int
+	OpenedLast7 int
+	ClosedLast7 int
 }
 
 // KindCount is one row in the classification-mix table.

@@ -357,6 +357,80 @@ dl.summary {
 dl.summary dt { color: var(--fg-muted); font-size: 13px; }
 dl.summary dd { margin: 0; }
 
+/* Case summary "scheda" with a primary row (status/kind/assignee)
+   on top and a 2-col grid below. */
+.case-summary {
+	display: flex;
+	flex-direction: column;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	overflow: hidden;
+	margin: 0 0 16px;
+}
+.case-summary-primary {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	background: #fafafa;
+	border-bottom: 1px solid var(--border);
+}
+.case-summary-grid {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+}
+.cs-cell {
+	padding: 10px 14px;
+	border-right: 1px solid var(--border);
+	border-bottom: 1px solid var(--border);
+}
+.cs-cell:last-child { border-right: 0; }
+.case-summary-primary .cs-cell:last-child { border-bottom: 0; }
+.case-summary-grid .cs-cell { border-bottom: 1px solid var(--border); }
+.case-summary-grid .cs-cell:nth-last-child(-n+2) { border-bottom: 0; }
+.cs-cell-wide { grid-column: 1 / -1; }
+.cs-label {
+	font-size: 11px;
+	color: var(--fg-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin-bottom: 4px;
+}
+.cs-value { font-size: 14px; }
+
+/* Vehicle enrichment under the VIN cell. */
+.vehicle-info {
+	margin-top: 4px;
+	font-size: 13px;
+}
+.vehicle-info strong { color: var(--fg); }
+
+/* Admin import report card after a CSV upload. */
+.import-report {
+	background: #f0f8ff;
+	border: 1px solid #cfd8e3;
+	border-radius: 6px;
+	padding: 12px 14px;
+	margin-bottom: 14px;
+	font-size: 14px;
+}
+.import-report ul { margin: 6px 0 0; padding-left: 18px; }
+.import-errors { font-family: monospace; font-size: 12px; }
+
+/* Admin overview list spacing. */
+ul.overview { list-style: none; padding: 0; margin: 0; }
+ul.overview li {
+	padding: 10px 0;
+	border-bottom: 1px solid var(--border);
+	font-size: 15px;
+}
+ul.overview li:last-child { border-bottom: 0; }
+
+/* Compact tables for admin lists. */
+table.claims.compact th, table.claims.compact td {
+	padding: 6px 10px;
+	font-size: 13px;
+}
+
 ol.timeline {
 	list-style: none;
 	padding: 0;

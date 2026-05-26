@@ -157,11 +157,11 @@ func renderSparklineSVG(days []DashDay) string {
 		}
 	}
 	const (
-		barW  = 50
-		gap   = 8
-		maxH  = 80
-		padY  = 24 // top label space
-		botY  = 16 // bottom label space
+		barW = 50
+		gap  = 8
+		maxH = 80
+		padY = 24 // top label space
+		botY = 16 // bottom label space
 	)
 	totalW := len(days)*(barW+gap) - gap
 	totalH := maxH + padY + botY

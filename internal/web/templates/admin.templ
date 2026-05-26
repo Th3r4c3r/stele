@@ -49,6 +49,8 @@ templ AdminOverview(nav NavUser, activeUsers, deactivatedUsers, dealers, rules, 
 			<li><strong>{ fmt.Sprint(activeUsers) }</strong> active users <span class="muted">/ { fmt.Sprint(deactivatedUsers) } deactivated</span> — <a href="/admin/users">manage</a></li>
 			<li><strong>{ fmt.Sprint(rules) }</strong> assignment rules — <a href="/admin/rules">manage</a></li>
 			<li><strong>{ fmt.Sprint(dealers) }</strong> dealers — <a href="/admin/dealers">manage</a></li>
+			<li>Vehicles &amp; models master — <a href="/admin/vehicles">manage</a></li>
+			<li>Parts catalog — <a href="/admin/parts">manage</a></li>
 			<li><strong>{ fmt.Sprint(sessions) }</strong> active sessions</li>
 		</ul>
 	}

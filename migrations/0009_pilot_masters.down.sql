@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS case_parts;
+DROP TABLE IF EXISTS parts;
+DROP TABLE IF EXISTS vehicles;
+DROP TABLE IF EXISTS vehicle_models;

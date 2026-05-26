@@ -20,10 +20,14 @@
 .env.local
 deploy/secrets/
 
-# Database dumps
+# Database dumps + pilot data files (ADR-013: master data lives only
+# on the Hetzner host, never in the repo).
 *.db
 *.sqlite
 *.dump
+*.csv
+/data/
+/deploy/data/
 
 # Coverage
 coverage.out

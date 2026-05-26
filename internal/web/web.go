@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,8 +26,10 @@ import (
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/mail"
+	"github.com/Th3r4c3r/stele/internal/part"
 	"github.com/Th3r4c3r/stele/internal/search"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
+	"github.com/Th3r4c3r/stele/internal/vehicle"
 	"github.com/Th3r4c3r/stele/internal/web/static"
 	"github.com/Th3r4c3r/stele/internal/web/templates"
 )
@@ -38,6 +41,8 @@ type Deps struct {
 	Resolver   *fault.PgResolver
 	Users      *userpkg.Repo
 	Dealers    *dealer.Repo
+	Vehicles   *vehicle.Repo
+	Parts      *part.Repo
 	Sessions   *auth.Sessions
 	Resets     *auth.ResetTokens
 	RateLimit  *auth.LoginRateLimit
@@ -52,6 +57,7 @@ type Deps struct {
 // /admin subtree.
 func Mount(mux *http.ServeMux, d Deps) {
 	h := &handlers{pool: d.Pool, store: d.Store, resolver: d.Resolver, users: d.Users,
+		vehicles: d.Vehicles, parts: d.Parts,
 		searchSvc: search.New(d.Pool)}
 	ah := &authHandlers{
 		users:      d.Users,
@@ -72,6 +78,12 @@ func Mount(mux *http.ServeMux, d Deps) {
 		resets:     d.Resets,
 		mailSender: d.MailSender,
 		baseURL:    d.BaseURL,
+	}
+	masters := &mastersHandlers{
+		pool:     d.Pool,
+		vehicles: d.Vehicles,
+		parts:    d.Parts,
+		users:    d.Users,
 	}
 
 	authMW := NewAuthMiddleware(d.Sessions, d.Users)
@@ -101,6 +113,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /cases/{id}/classify", wrap(h.classifyCase))
 	mux.Handle("POST /cases/{id}/close", wrap(h.closeCase))
 	mux.Handle("POST /cases/{id}/transfer", wrap(h.transferCase))
+	mux.Handle("POST /cases/{id}/parts", wrap(h.recordPart))
 	mux.Handle("POST /cases/{id}/documents", wrap(docs.uploadDocument))
 	mux.Handle("GET /documents/{id}/raw", wrap(docs.downloadDocument))
 	mux.Handle("POST /documents/{id}/delete", wrap(docs.deleteDocument))
@@ -123,6 +136,11 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /admin/rules", wrapAdmin(adm.rulesCreate))
 	mux.Handle("GET /admin/dealers", wrapAdmin(adm.dealersList))
 	mux.Handle("POST /admin/dealers", wrapAdmin(adm.dealersCreate))
+	mux.Handle("GET /admin/vehicles", wrapAdmin(masters.vehiclesPage))
+	mux.Handle("POST /admin/vehicles/import", wrapAdmin(masters.vehiclesImport))
+	mux.Handle("POST /admin/vehicles/import-models", wrapAdmin(masters.vehiclesImportModels))
+	mux.Handle("GET /admin/parts", wrapAdmin(masters.partsPage))
+	mux.Handle("POST /admin/parts/import", wrapAdmin(masters.partsImport))
 
 	staticFS, err := fs.Sub(static.FS, ".")
 	if err != nil {
@@ -136,6 +154,8 @@ type handlers struct {
 	store     *event.PostgresStore
 	resolver  fault.Resolver
 	users     *userpkg.Repo
+	vehicles  *vehicle.Repo
+	parts     *part.Repo
 	searchSvc *search.Service
 }
 
@@ -366,8 +386,97 @@ func (h *handlers) showCase(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	// Vehicle enrichment is best-effort: an unknown VIN renders the
+	// "VIN not in master" hint rather than blocking the page.
+	vehicleInfo := h.lookupVehicle(r.Context(), row.VIN)
+	caseParts, err := h.queryCaseParts(r.Context(), id)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	partOptions, err := h.partOptions(r.Context())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.CaseDetailPage(navFor(r.Context(), h.users), row, timeline, userOpts, docs).Render(r.Context(), w)
+	_ = templates.CaseDetailPage(navFor(r.Context(), h.users), row, timeline, userOpts, docs,
+		vehicleInfo, caseParts, partOptions).Render(r.Context(), w)
+}
+
+// lookupVehicle returns a non-nil VehicleInfo only when the VIN
+// resolves in the vehicles master. Used to enrich the case detail
+// VIN cell without blocking the page on a missing lookup.
+func (h *handlers) lookupVehicle(ctx context.Context, vin string) *templates.VehicleInfo {
+	if h.vehicles == nil || vin == "" {
+		return nil
+	}
+	v, err := h.vehicles.ByVIN(ctx, vin)
+	if err != nil {
+		return nil
+	}
+	return &templates.VehicleInfo{
+		ModelName:        v.ModelName,
+		ModelCode:        v.ModelCode,
+		ManufacturedYear: v.ManufacturedYear,
+		Country:          v.Country,
+	}
+}
+
+// queryCaseParts loads the case_parts read model joined with parts
+// master for descriptions. Ordered newest first.
+func (h *handlers) queryCaseParts(ctx context.Context, caseID uuid.UUID) ([]templates.CasePartRow, error) {
+	rows, err := h.pool.Query(ctx, `
+		SELECT cp.pn,
+		       COALESCE(p.description, ''),
+		       cp.qty,
+		       cp.kind,
+		       cp.cost_at_event,
+		       cp.recorded_at
+		FROM case_parts cp
+		LEFT JOIN parts p ON p.pn = cp.pn
+		WHERE cp.case_id = $1
+		ORDER BY cp.recorded_at DESC, cp.id DESC
+	`, caseID)
+	if err != nil {
+		return nil, fmt.Errorf("queryCaseParts: %w", err)
+	}
+	defer rows.Close()
+	var out []templates.CasePartRow
+	for rows.Next() {
+		var row templates.CasePartRow
+		if err := rows.Scan(&row.PN, &row.Description, &row.Qty, &row.Kind, &row.CostEUR, &row.RecordedAt); err != nil {
+			return nil, err
+		}
+		row.IsQuote = row.Kind == "quoted"
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// partOptions returns up to 500 master parts as datalist suggestions.
+// At the pilot scale that's all of them; if Vmoto catalogue grows
+// past 500, swap for an HTMX live-search later.
+func (h *handlers) partOptions(ctx context.Context) ([]templates.PartOption, error) {
+	if h.parts == nil {
+		return nil, nil
+	}
+	all, err := h.parts.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]templates.PartOption, 0, len(all))
+	for _, p := range all {
+		label := p.PN
+		if p.Description != "" {
+			label = p.PN + " — " + p.Description
+		}
+		out = append(out, templates.PartOption{PN: p.PN, Label: label})
+	}
+	if len(out) > 500 {
+		out = out[:500]
+	}
+	return out, nil
 }
 
 func (h *handlers) queryDocuments(ctx context.Context, caseID uuid.UUID) ([]templates.DocumentRow, error) {
@@ -473,6 +582,70 @@ func (h *handlers) closeCase(w http.ResponseWriter, r *http.Request) {
 		Resolution: r.PostForm.Get("resolution"),
 		ClosedBy:   r.PostForm.Get("closed_by"),
 	})
+	if errors.Is(err, fault.ErrValidation) {
+		http.Error(w, friendlyValidation(err), http.StatusUnprocessableEntity)
+		return
+	}
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
+}
+
+// recordPart handles POST /cases/{id}/parts. The form uses a single
+// "action" select with 4 options:
+//   - replaced_warranty | replaced_goodwill | replaced_out_of_warranty
+//     -> appends PartReplaced with the matching kind.
+//   - quoted -> appends PartQuoted with quoted_amount_eur.
+//
+// This way operators have one entry point and don't need to know the
+// underlying event taxonomy.
+func (h *handlers) recordPart(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+	byUserID, err := userpkg.FromCtx(r.Context())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pn := strings.ToUpper(strings.TrimSpace(r.PostForm.Get("pn")))
+	qtyStr := r.PostForm.Get("qty")
+	action := r.PostForm.Get("action")
+	reason := strings.TrimSpace(r.PostForm.Get("reason"))
+
+	qty, qerr := strconv.Atoi(qtyStr)
+	if qerr != nil || qty < 1 {
+		http.Error(w, "qty must be a positive integer", http.StatusBadRequest)
+		return
+	}
+
+	switch action {
+	case "replaced_warranty", "replaced_goodwill", "replaced_out_of_warranty":
+		kind := strings.TrimPrefix(action, "replaced_")
+		err = fault.RecordPartReplaced(r.Context(), h.store, id, byUserID, pn, qty, kind, reason)
+	case "quoted":
+		amountStr := strings.TrimSpace(r.PostForm.Get("quoted_amount_eur"))
+		if amountStr == "" {
+			http.Error(w, "quoted action requires quoted_amount_eur", http.StatusBadRequest)
+			return
+		}
+		amount, perr := strconv.ParseFloat(amountStr, 64)
+		if perr != nil || amount < 0 {
+			http.Error(w, "quoted_amount_eur must be a non-negative number", http.StatusBadRequest)
+			return
+		}
+		err = fault.RecordPartQuoted(r.Context(), h.store, id, byUserID, pn, qty, amount)
+	default:
+		http.Error(w, "unknown action", http.StatusBadRequest)
+		return
+	}
 	if errors.Is(err, fault.ErrValidation) {
 		http.Error(w, friendlyValidation(err), http.StatusUnprocessableEntity)
 		return

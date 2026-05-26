@@ -172,4 +172,3 @@ func parseDocID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	}
 	return id, true
 }
-

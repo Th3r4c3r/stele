@@ -22,14 +22,26 @@ const (
 	EventNoteAdded    = "NoteAdded"
 	EventClassified   = "Classified"
 	EventCaseClosed   = "CaseClosed"
+	EventPartReplaced = "PartReplaced"
+	EventPartQuoted   = "PartQuoted"
+)
+
+// Part kind discriminator: both events carry it for downstream cost
+// attribution. PartReplaced uses 'warranty' / 'goodwill' /
+// 'out_of_warranty' to mirror the case classification; PartQuoted
+// is always 'out_of_warranty' by definition.
+const (
+	PartKindWarranty      = "warranty"
+	PartKindGoodwill      = "goodwill"
+	PartKindOutOfWarranty = "out_of_warranty"
 )
 
 // Reason values for CaseAssigned.
 const (
-	ReasonOpener            = "opener"
-	ReasonRuleFaultPrefix   = "rule:fault_prefix"
-	ReasonRuleDealerRegion  = "rule:dealer_region"
-	ReasonManual            = "manual"
+	ReasonOpener           = "opener"
+	ReasonRuleFaultPrefix  = "rule:fault_prefix"
+	ReasonRuleDealerRegion = "rule:dealer_region"
+	ReasonManual           = "manual"
 )
 
 // Status values for the current_cases read model.
@@ -103,6 +115,27 @@ type CaseAssigned struct {
 	TransferredFrom *uuid.UUID `json:"transferred_from,omitempty"`
 }
 
+// PartReplaced records a part that was physically swapped under the
+// case. Cost attribution depends on Kind (warranty = vendor pays,
+// goodwill = we pay as gesture, out_of_warranty = customer pays).
+type PartReplaced struct {
+	PartNumber string    `json:"pn"`
+	Qty        int       `json:"qty"`
+	Kind       string    `json:"kind"` // warranty | goodwill | out_of_warranty
+	Reason     string    `json:"reason,omitempty"`
+	ByUserID   uuid.UUID `json:"by_user_id"`
+}
+
+// PartQuoted records a price quote sent to the customer for an
+// out-of-warranty repair. Whether the customer accepts is not yet
+// modelled (would be a separate event when needed).
+type PartQuoted struct {
+	PartNumber      string    `json:"pn"`
+	Qty             int       `json:"qty"`
+	QuotedAmountEUR float64   `json:"quoted_amount_eur"`
+	ByUserID        uuid.UUID `json:"by_user_id"`
+}
+
 // CaseClosed is the terminal event. Status -> "closed". May arrive
 // before any Classified (closed-from-triage); in that case the row's
 // kind stays NULL.
@@ -145,6 +178,18 @@ func DecodePayload(eventType string, payload json.RawMessage) (any, error) {
 		var v CaseAssigned
 		if err := json.Unmarshal(payload, &v); err != nil {
 			return nil, fmt.Errorf("decode CaseAssigned: %w", err)
+		}
+		return v, nil
+	case EventPartReplaced:
+		var v PartReplaced
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return nil, fmt.Errorf("decode PartReplaced: %w", err)
+		}
+		return v, nil
+	case EventPartQuoted:
+		var v PartQuoted
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return nil, fmt.Errorf("decode PartQuoted: %w", err)
 		}
 		return v, nil
 	case EventCaseClosed:

@@ -35,19 +35,19 @@ type CaseHit struct {
 
 // NoteHit is a NoteAdded event whose text matched.
 type NoteHit struct {
-	CaseID    uuid.UUID
+	CaseID     uuid.UUID
 	OccurredAt time.Time
-	Author    string
-	Snippet   string
+	Author     string
+	Snippet    string
 }
 
 // DocumentHit is a current_documents row whose filename matched.
 type DocumentHit struct {
-	DocumentID uuid.UUID
-	CaseID     uuid.UUID
-	Filename   string
+	DocumentID  uuid.UUID
+	CaseID      uuid.UUID
+	Filename    string
 	ContentType string
-	AttachedAt time.Time
+	AttachedAt  time.Time
 }
 
 // Service is the search entry point. Pool-backed; no cache.

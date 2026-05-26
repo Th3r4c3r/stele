@@ -196,6 +196,89 @@ func Classify(ctx context.Context, store *event.PostgresStore, caseID uuid.UUID,
 	return nil
 }
 
+// RecordPartReplaced appends a PartReplaced event. Resolves the
+// part's reference price from the parts master (looked up via priceFn
+// callback) so the projector can snapshot it at event time.
+func RecordPartReplaced(
+	ctx context.Context,
+	store *event.PostgresStore,
+	caseID, byUserID uuid.UUID,
+	pn string, qty int, kind, reason string,
+) error {
+	pn = strings.TrimSpace(pn)
+	if caseID == uuid.Nil || byUserID == uuid.Nil {
+		return fmt.Errorf("%w: case_id and by_user required", ErrValidation)
+	}
+	if pn == "" {
+		return fmt.Errorf("%w: pn required", ErrValidation)
+	}
+	if qty <= 0 {
+		return fmt.Errorf("%w: qty must be > 0", ErrValidation)
+	}
+	switch kind {
+	case PartKindWarranty, PartKindGoodwill, PartKindOutOfWarranty:
+	default:
+		return fmt.Errorf("%w: kind must be warranty|goodwill|out_of_warranty", ErrValidation)
+	}
+	payload, err := MarshalPayload(PartReplaced{
+		PartNumber: pn, Qty: qty, Kind: kind, Reason: strings.TrimSpace(reason),
+		ByUserID: byUserID,
+	})
+	if err != nil {
+		return err
+	}
+	ev := event.Event{
+		AggregateType: AggregateType,
+		AggregateID:   caseID,
+		Type:          EventPartReplaced,
+		Payload:       payload,
+		OccurredAt:    time.Now().UTC(),
+	}
+	if err := store.Append(ctx, []event.Event{ev}); err != nil {
+		return fmt.Errorf("RecordPartReplaced: append: %w", err)
+	}
+	return nil
+}
+
+// RecordPartQuoted appends a PartQuoted event for out-of-warranty.
+func RecordPartQuoted(
+	ctx context.Context,
+	store *event.PostgresStore,
+	caseID, byUserID uuid.UUID,
+	pn string, qty int, quotedAmountEUR float64,
+) error {
+	pn = strings.TrimSpace(pn)
+	if caseID == uuid.Nil || byUserID == uuid.Nil {
+		return fmt.Errorf("%w: case_id and by_user required", ErrValidation)
+	}
+	if pn == "" {
+		return fmt.Errorf("%w: pn required", ErrValidation)
+	}
+	if qty <= 0 {
+		return fmt.Errorf("%w: qty must be > 0", ErrValidation)
+	}
+	if quotedAmountEUR < 0 {
+		return fmt.Errorf("%w: quoted_amount must be >= 0", ErrValidation)
+	}
+	payload, err := MarshalPayload(PartQuoted{
+		PartNumber: pn, Qty: qty, QuotedAmountEUR: quotedAmountEUR, ByUserID: byUserID,
+	})
+	if err != nil {
+		return err
+	}
+	ev := event.Event{
+		AggregateType: AggregateType,
+		AggregateID:   caseID,
+		Type:          EventPartQuoted,
+		Payload:       payload,
+		OccurredAt:    time.Now().UTC(),
+	}
+	if err := store.Append(ctx, []event.Event{ev}); err != nil {
+		return fmt.Errorf("RecordPartQuoted: append: %w", err)
+	}
+	return nil
+}
+
 // CloseCase appends a CaseClosed event. Allowed from any status;
 // closing an already-closed case is idempotent at the projector level.
 func CloseCase(ctx context.Context, store *event.PostgresStore, caseID uuid.UUID, p CaseClosed) error {

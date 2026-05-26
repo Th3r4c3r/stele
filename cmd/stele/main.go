@@ -23,8 +23,10 @@ import (
 	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/mail"
 	"github.com/Th3r4c3r/stele/internal/migrate"
+	"github.com/Th3r4c3r/stele/internal/part"
 	"github.com/Th3r4c3r/stele/internal/projection"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
+	"github.com/Th3r4c3r/stele/internal/vehicle"
 	"github.com/Th3r4c3r/stele/internal/web"
 	"github.com/Th3r4c3r/stele/migrations"
 )
@@ -103,12 +105,15 @@ func runServer() int {
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
 	runner.Register(fault.CurrentCasesProjector())
+	runner.Register(fault.CasePartsProjector(pool))
 	runner.Register(document.CurrentDocumentsProjector(docStorage))
 	runnerWG := runner.Start(ctx)
 	slog.Info("projection runner started", "projectors", runner.Names())
 
 	userRepo := userpkg.NewRepo(pool)
 	dealerRepo := dealer.NewRepo(pool)
+	vehicleRepo := vehicle.NewRepo(pool)
+	partRepo := part.NewRepo(pool)
 	resolver := fault.NewPgResolver(pool)
 
 	secret := []byte(os.Getenv("STELE_SESSION_SECRET"))
@@ -136,6 +141,8 @@ func runServer() int {
 		Resolver:   resolver,
 		Users:      userRepo,
 		Dealers:    dealerRepo,
+		Vehicles:   vehicleRepo,
+		Parts:      partRepo,
 		Sessions:   sessions,
 		Resets:     resets,
 		RateLimit:  rateLimit,
@@ -204,6 +211,7 @@ func runReplay(args []string) int {
 	runner := projection.NewRunner(store, pool)
 	runner.Register(projection.EventCountByType())
 	runner.Register(fault.CurrentCasesProjector())
+	runner.Register(fault.CasePartsProjector(pool))
 	// replay also needs the storage so DocumentRedacted events unlink
 	// the file on disk (idempotent: missing-file is treated as no-op).
 	replayDocs, err := document.NewStorage(
