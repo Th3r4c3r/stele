@@ -104,6 +104,30 @@ runs on the Hetzner instance at a URL Yan can open.
   17 dealer matches, 1 document. Empty result handled, min 2 chars enforced.
 - Trigram/GIN indexes deferred until volume warrants.
 
+## M9 — Pilot Vmoto data model (DONE 2026-05-26)
+- ADR-013: lift "no real Vmoto data" constraint for vehicle/parts master
+  + PartReplaced/PartQuoted events. Owner data stays out of scope. ✅
+- Migration 0009: vehicle_models, vehicles (VIN CHECK length=17), parts
+  (supersedes_pn self-ref), case_parts read model. ✅
+- internal/vehicle + internal/part packages with idempotent CSV upsert. ✅
+- fault: PartReplaced + PartQuoted events with kind enum
+  warranty | goodwill | out_of_warranty; commands + CasePartsProjector
+  that snapshots price from parts master at event time. ✅
+- /admin/vehicles + /admin/parts pages with import forms (models,
+  vehicles, parts) and per-row error reports. ✅
+- Case detail: VIN cell enriched with model name / year / country when
+  in master, otherwise links to import; new collapsible Parts section
+  with list + add form (replaced warranty/goodwill/oow or quoted). ✅
+- Privacy: .gitignore enforces *.csv + /data/; data lives only on
+  Hetzner; CLAUDE.md updated to mirror ADR-013. ✅
+- Live: https://stele.178-105-44-164.nip.io/admin/vehicles (empty,
+  ready for Yan to import real Vmoto CSVs).
+
+## M10 — Failure-rate analytics (next)
+- Page joining case_parts + vehicles + parts: "top failing PNs by
+  model", "failure rate per fault_code per model", cohort by year.
+- Deferred from M9 split; data model is ready, only queries + UI left.
+
 ## (deferred indefinitely) — Time-travel
 Bi-temporal state-as-of API + UI. Deferred until a concrete consumer
 (audit, legal hold, backdated-edit workflow) emerges. Every event
