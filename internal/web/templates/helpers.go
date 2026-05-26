@@ -76,6 +76,17 @@ func derefStr(s *string) string {
 	return *s
 }
 
+// priceString formats a nullable EUR price as a fixed-2 decimal,
+// or returns "" when nil. Used as a data-* attribute value on the
+// add-part datalist so a tiny inline script can show it in a preview
+// without a server round-trip.
+func priceString(p *float64) string {
+	if p == nil {
+		return ""
+	}
+	return fmt.Sprintf("%.2f", *p)
+}
+
 // triageOrClassifiedDefaultOpen returns the attrs for a <details>
 // element so that triage cases open the Classify section by default
 // (it's the next expected action), while classified cases keep

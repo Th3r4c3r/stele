@@ -20,8 +20,9 @@ type Part struct {
 	PN           string
 	Description  string
 	Category     *string
-	PriceEUR     *float64 // dealer reference price
+	PriceEUR     *float64 // dealer reference price (VAT excluded)
 	SupersedesPN *string
+	Notes        *string // free-text: supersession / variant / legacy notes
 }
 
 var ErrNotFound = errors.New("part: not found")
@@ -33,9 +34,9 @@ func NewRepo(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
 func (r *Repo) ByPN(ctx context.Context, pn string) (Part, error) {
 	var p Part
 	err := r.pool.QueryRow(ctx, `
-		SELECT pn, description, category, price_eur, supersedes_pn
+		SELECT pn, description, category, price_eur, supersedes_pn, notes
 		FROM parts WHERE pn = $1
-	`, pn).Scan(&p.PN, &p.Description, &p.Category, &p.PriceEUR, &p.SupersedesPN)
+	`, pn).Scan(&p.PN, &p.Description, &p.Category, &p.PriceEUR, &p.SupersedesPN, &p.Notes)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -47,7 +48,7 @@ func (r *Repo) ByPN(ctx context.Context, pn string) (Part, error) {
 
 func (r *Repo) List(ctx context.Context) ([]Part, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT pn, description, category, price_eur, supersedes_pn
+		SELECT pn, description, category, price_eur, supersedes_pn, notes
 		FROM parts ORDER BY pn
 	`)
 	if err != nil {
@@ -57,7 +58,7 @@ func (r *Repo) List(ctx context.Context) ([]Part, error) {
 	var out []Part
 	for rows.Next() {
 		var p Part
-		if err := rows.Scan(&p.PN, &p.Description, &p.Category, &p.PriceEUR, &p.SupersedesPN); err != nil {
+		if err := rows.Scan(&p.PN, &p.Description, &p.Category, &p.PriceEUR, &p.SupersedesPN, &p.Notes); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -73,14 +74,15 @@ func (r *Repo) Count(ctx context.Context) (int, error) {
 
 func (r *Repo) Upsert(ctx context.Context, p Part) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO parts (pn, description, category, price_eur, supersedes_pn)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO parts (pn, description, category, price_eur, supersedes_pn, notes)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (pn) DO UPDATE
-		   SET description = EXCLUDED.description,
-		       category    = EXCLUDED.category,
-		       price_eur   = EXCLUDED.price_eur,
-		       supersedes_pn = EXCLUDED.supersedes_pn
-	`, p.PN, p.Description, p.Category, p.PriceEUR, p.SupersedesPN)
+		   SET description   = EXCLUDED.description,
+		       category      = EXCLUDED.category,
+		       price_eur     = EXCLUDED.price_eur,
+		       supersedes_pn = EXCLUDED.supersedes_pn,
+		       notes         = EXCLUDED.notes
+	`, p.PN, p.Description, p.Category, p.PriceEUR, p.SupersedesPN, p.Notes)
 	if err != nil {
 		return fmt.Errorf("part.Upsert %s: %w", p.PN, err)
 	}
@@ -99,8 +101,9 @@ type ImportError struct {
 	Reason string
 }
 
-// ImportCSV reads header: pn,description,category,price_eur,supersedes_pn
-// Required: pn, description.
+// ImportCSV reads header: pn,description,category,price_eur,supersedes_pn,notes
+// Required: pn, description. All other columns are optional and may
+// appear in any order; unknown columns are ignored.
 func (r *Repo) ImportCSV(ctx context.Context, body io.Reader) (ImportReport, error) {
 	var rep ImportReport
 	cr := csv.NewReader(body)
@@ -149,6 +152,9 @@ func (r *Repo) ImportCSV(ctx context.Context, body io.Reader) (ImportReport, err
 		}
 		if s, ok := optCell(rec, idx, "supersedes_pn"); ok {
 			p.SupersedesPN = &s
+		}
+		if n, ok := optCell(rec, idx, "notes"); ok {
+			p.Notes = &n
 		}
 		existed, _ := r.exists(ctx, p.PN)
 		if err := r.Upsert(ctx, p); err != nil {

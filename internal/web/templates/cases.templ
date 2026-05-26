@@ -69,10 +69,16 @@ type CasePartRow struct {
 	IsQuote         bool // true => from PartQuoted; false => from PartReplaced
 }
 
-// PartOption is a (pn, label) pair for the add-part datalist.
+// PartOption is one suggestion in the add-part datalist. The extra
+// fields (Description / PriceEUR / Notes) are emitted as data-*
+// attributes so a tiny inline script can populate the preview panel
+// when the operator picks a PN, without a server round-trip.
 type PartOption struct {
-	PN    string
-	Label string // "PN - description"
+	PN          string
+	Label       string   // "PN - description"
+	Description string   // joined parts.description
+	PriceEUR    *float64 // dealer reference price, VAT excluded
+	Notes       *string  // supersession / variant / legacy notes
 }
 
 // DocumentRow describes one attachment for the case detail view.
@@ -758,13 +764,23 @@ templ AddPartForm(caseID uuid.UUID, options []PartOption) {
 	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/parts") } class="form inline">
 		<label>
 			P/N
-			<input name="pn" required list="parts-options" placeholder="e.g. BAT-72V-40AH"/>
+			<input id="add-part-pn" name="pn" required list="parts-options" placeholder="e.g. BAT-72V-40AH" autocomplete="off"/>
 			<datalist id="parts-options">
 				for _, o := range options {
-					<option value={ o.PN }>{ o.Label }</option>
+					<option
+						value={ o.PN }
+						data-desc={ o.Description }
+						data-price={ priceString(o.PriceEUR) }
+						data-notes={ derefStr(o.Notes) }
+					>{ o.Label }</option>
 				}
 			</datalist>
 		</label>
+		<div id="add-part-preview" class="part-preview" hidden>
+			<div class="pp-desc"></div>
+			<div class="pp-price"></div>
+			<div class="pp-notes"></div>
+		</div>
 		<label>
 			Qty
 			<input name="qty" type="number" required min="1" value="1"/>
@@ -779,13 +795,43 @@ templ AddPartForm(caseID uuid.UUID, options []PartOption) {
 			</select>
 		</label>
 		<label>
-			Quote amount EUR (only when 'quoted')
-			<input name="quoted_amount_eur" type="number" step="0.01" min="0" placeholder="leave blank for replaced"/>
+			Quote amount EUR, VAT excluded (only when 'quoted')
+			<input id="add-part-quoted" name="quoted_amount_eur" type="number" step="0.01" min="0" placeholder="leave blank for replaced"/>
 		</label>
 		<label>
 			Reason / note
 			<input name="reason" placeholder="optional"/>
 		</label>
 		<button type="submit" class="btn">Record</button>
+		<script>
+		(function () {
+			var input   = document.getElementById('add-part-pn');
+			var list    = document.getElementById('parts-options');
+			var preview = document.getElementById('add-part-preview');
+			var qDesc   = preview.querySelector('.pp-desc');
+			var qPrice  = preview.querySelector('.pp-price');
+			var qNotes  = preview.querySelector('.pp-notes');
+			var qInput  = document.getElementById('add-part-quoted');
+			function sync() {
+				var v = input.value.trim();
+				if (!v) { preview.hidden = true; return; }
+				var opt = list.querySelector('option[value="' + v.replace(/"/g, '\\"') + '"]');
+				if (!opt) { preview.hidden = true; return; }
+				qDesc.textContent  = opt.dataset.desc || '';
+				var price = opt.dataset.price;
+				qPrice.textContent = price ? ('Reference price: ' + price + ' EUR (VAT excl.)') : 'No reference price on file';
+				qNotes.textContent = opt.dataset.notes || '';
+				qNotes.hidden = !opt.dataset.notes;
+				preview.hidden = false;
+				// Convenience: prefill quoted_amount_eur with reference price
+				// when the field is still empty (operator can edit it).
+				if (price && qInput && !qInput.value) {
+					qInput.placeholder = price;
+				}
+			}
+			input.addEventListener('input', sync);
+			input.addEventListener('change', sync);
+		})();
+		</script>
 	</form>
 }

@@ -469,9 +469,15 @@ func (h *handlers) partOptions(ctx context.Context) ([]templates.PartOption, err
 	for _, p := range all {
 		label := p.PN
 		if p.Description != "" {
-			label = p.PN + " — " + p.Description
+			label = p.PN + " - " + p.Description
 		}
-		out = append(out, templates.PartOption{PN: p.PN, Label: label})
+		out = append(out, templates.PartOption{
+			PN:          p.PN,
+			Label:       label,
+			Description: p.Description,
+			PriceEUR:    p.PriceEUR,
+			Notes:       p.Notes,
+		})
 	}
 	if len(out) > 500 {
 		out = out[:500]
