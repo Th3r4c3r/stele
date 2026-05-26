@@ -98,16 +98,7 @@ templ searchCasesTable(rows []SearchCaseHit, term string) {
 			for _, r := range rows {
 				<tr>
 					<td><a href={ templ.URL("/cases/" + r.CaseID.String()) } class="case-num">@highlightSpan(r.Display(), term)</a></td>
-					<td>
-						switch r.Status {
-							case "triage":
-								<span class="badge status-triage">triage</span>
-							case "classified":
-								<span class="badge status-classified">classified</span>
-							case "closed":
-								<span class="badge status-closed">closed</span>
-						}
-					</td>
+					<td>@statusBadge(r.Status)</td>
 					<td>@highlightSpan(r.Dealer, term)</td>
 					<td><code>@highlightSpan(r.VIN, term)</code></td>
 					<td>@highlightSpan(r.FaultCode, term)</td>
