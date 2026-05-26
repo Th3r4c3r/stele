@@ -340,6 +340,12 @@ func (h *handlers) createCase(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	// Read-after-write safety net: wait briefly for the current_cases
+	// projector to apply CaseOpened before redirecting, otherwise the
+	// browser races the projector and sees a 404 on the just-created
+	// case. Bounded at ~2s; if the wait times out we redirect anyway
+	// and showCase's own retry will pick up the slack.
+	_ = h.waitForCase(r.Context(), id, 2*time.Second)
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", "/cases/"+id.String())
 		w.WriteHeader(http.StatusNoContent)
@@ -348,12 +354,47 @@ func (h *handlers) createCase(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
 }
 
+// waitForCase polls current_cases until the row for id is visible, or
+// until timeout elapses. Returns nil on success, the last error
+// otherwise. 50ms backoff: imperceptible to humans, plenty of slack
+// for the projector's poll tick.
+func (h *handlers) waitForCase(ctx context.Context, id uuid.UUID, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		var n int
+		err := h.pool.QueryRow(ctx, `SELECT 1 FROM current_cases WHERE id = $1`, id).Scan(&n)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
 func (h *handlers) showCase(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseID(w, r)
 	if !ok {
 		return
 	}
 	row, err := h.queryOneCase(r.Context(), id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Second-chance retry: covers deep-links that arrive before
+		// the projector finishes its first tick on a brand-new case.
+		if werr := h.waitForCase(r.Context(), id, 1*time.Second); werr == nil {
+			row, err = h.queryOneCase(r.Context(), id)
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.Error(w, "case not found (projection may be lagging)", http.StatusNotFound)
 		return
