@@ -1,0 +1,146 @@
+package templates
+
+import "fmt"
+
+// StageDurationRow mirrors analytics.StageDurationRow.
+type StageDurationRow struct {
+	Stage           string
+	CompletedVisits int
+	AvgDays         float64
+	MedianDays      float64
+	P90Days         float64
+}
+
+// CycleTimeRow mirrors analytics.CycleTimeRow. Kind="" => overall.
+type CycleTimeRow struct {
+	Kind        string
+	ClosedCases int
+	AvgDays     float64
+	MedianDays  float64
+	P90Days     float64
+}
+
+// StuckRow mirrors analytics.StuckRow.
+type StuckRow struct {
+	Stage        string
+	OpenCases    int
+	AvgDaysStuck float64
+	MaxDaysStuck float64
+}
+
+templ AnalyticsStagesPage(
+	nav NavUser,
+	durations []StageDurationRow,
+	cycle []CycleTimeRow,
+	stuck []StuckRow,
+) {
+	@Layout("Analytics · stages", nav) {
+		<section class="page-head">
+			<h1>Repair workflow analytics</h1>
+			<a href="/analytics" class="btn">Back to PN failure rate</a>
+		</section>
+		<p class="muted">
+			Time-in-stage, key-to-key cycle time, and currently-stuck
+			cases. All data derived from the StageChanged event log,
+			so backfilled (pre-M14) cases only contribute to the
+			cycle-time view.
+		</p>
+
+		<section>
+			<h2>Time in stage</h2>
+			<p class="muted small">Across completed visits (excludes the current stage of open cases).</p>
+			if len(durations) == 0 {
+				<p class="muted">No completed transitions yet.</p>
+			} else {
+				<table class="claims compact">
+					<thead>
+						<tr>
+							<th>Stage</th>
+							<th>Visits</th>
+							<th>Avg (days)</th>
+							<th>Median</th>
+							<th>P90</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, r := range durations {
+							<tr>
+								<td>@stageBadge(r.Stage)</td>
+								<td>{ fmt.Sprint(r.CompletedVisits) }</td>
+								<td><strong>{ fmt.Sprintf("%.2f", r.AvgDays) }</strong></td>
+								<td>{ fmt.Sprintf("%.2f", r.MedianDays) }</td>
+								<td>{ fmt.Sprintf("%.2f", r.P90Days) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		</section>
+
+		<section>
+			<h2>Cycle time (open → closed)</h2>
+			<p class="muted small">Wall-clock days from CaseOpened to CaseClosed. First row is the overall aggregate; the rest break it down by case kind.</p>
+			if len(cycle) == 0 {
+				<p class="muted">No closed cases yet.</p>
+			} else {
+				<table class="claims compact">
+					<thead>
+						<tr>
+							<th>Kind</th>
+							<th>Closed cases</th>
+							<th>Avg (days)</th>
+							<th>Median</th>
+							<th>P90</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, r := range cycle {
+							<tr>
+								<td>
+									if r.Kind == "" {
+										<strong>Overall</strong>
+									} else {
+										{ humanKind(r.Kind) }
+									}
+								</td>
+								<td>{ fmt.Sprint(r.ClosedCases) }</td>
+								<td><strong>{ fmt.Sprintf("%.2f", r.AvgDays) }</strong></td>
+								<td>{ fmt.Sprintf("%.2f", r.MedianDays) }</td>
+								<td>{ fmt.Sprintf("%.2f", r.P90Days) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		</section>
+
+		<section>
+			<h2>Currently stuck</h2>
+			<p class="muted small">Open cases (status ≠ closed) grouped by current stage, with how long they have been there. Max highlights the case the most overdue.</p>
+			if len(stuck) == 0 {
+				<p class="muted">No open cases.</p>
+			} else {
+				<table class="claims compact">
+					<thead>
+						<tr>
+							<th>Stage</th>
+							<th>Open cases</th>
+							<th>Avg days in stage</th>
+							<th>Max days</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, r := range stuck {
+							<tr>
+								<td>@stageBadge(r.Stage)</td>
+								<td><strong>{ fmt.Sprint(r.OpenCases) }</strong></td>
+								<td>{ fmt.Sprintf("%.1f", r.AvgDaysStuck) }</td>
+								<td>{ fmt.Sprintf("%.1f", r.MaxDaysStuck) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		</section>
+	}
+}

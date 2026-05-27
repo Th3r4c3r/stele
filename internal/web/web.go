@@ -120,6 +120,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("GET /", wrap(h.rootRedirect))
 	mux.Handle("GET /dashboard", wrap(h.dashboardPage))
 	mux.Handle("GET /analytics", wrap(h.analyticsPage))
+	mux.Handle("GET /analytics/stages", wrap(h.stagesPage))
 	mux.Handle("GET /cases", wrap(h.listCases))
 	mux.Handle("GET /cases.csv", wrap(h.exportCasesCSV))
 	mux.Handle("GET /cases/new", wrap(h.newCaseForm))

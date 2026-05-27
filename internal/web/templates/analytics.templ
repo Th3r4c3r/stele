@@ -44,8 +44,9 @@ templ AnalyticsPage(
 	@Layout("Analytics", nav) {
 		<section class="page-head">
 			<h1>Analytics</h1>
-			<p class="muted">Failure-rate and cost insights joined across cases, vehicles, and parts. Replaced parts only (quotes excluded). Read-only.</p>
+			<a href="/analytics/stages" class="btn">Workflow timing →</a>
 		</section>
+		<p class="muted">Failure-rate and cost insights joined across cases, vehicles, and parts. Replaced parts only (quotes excluded). Read-only.</p>
 
 		<section>
 			<h2>Top failing PN per model (last { fmt.Sprint(windowDays) } days)</h2>
