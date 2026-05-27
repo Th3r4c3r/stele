@@ -675,7 +675,7 @@ func (h *handlers) addNote(w http.ResponseWriter, r *http.Request) {
 		_ = templates.CaseTimeline(timeline).Render(r.Context(), w)
 		return
 	}
-	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
+	h.redirectToCaseAfterProjector(w, r, id)
 }
 
 func (h *handlers) classifyCase(w http.ResponseWriter, r *http.Request) {
@@ -699,7 +699,7 @@ func (h *handlers) classifyCase(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
-	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
+	h.redirectToCaseAfterProjector(w, r, id)
 }
 
 func (h *handlers) closeCase(w http.ResponseWriter, r *http.Request) {
@@ -723,7 +723,7 @@ func (h *handlers) closeCase(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
-	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
+	h.redirectToCaseAfterProjector(w, r, id)
 }
 
 // recordPart handles POST /cases/{id}/parts. The form uses a single
@@ -787,7 +787,7 @@ func (h *handlers) recordPart(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
-	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
+	h.redirectToCaseAfterProjector(w, r, id)
 }
 
 // changeStage handles POST /cases/{id}/stage. The form carries the
@@ -822,7 +822,7 @@ func (h *handlers) changeStage(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
-	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
+	h.redirectToCaseAfterProjector(w, r, id)
 }
 
 func (h *handlers) transferCase(w http.ResponseWriter, r *http.Request) {
@@ -858,7 +858,7 @@ func (h *handlers) transferCase(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
-	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
+	h.redirectToCaseAfterProjector(w, r, id)
 }
 
 // --- queries ---
@@ -1142,6 +1142,16 @@ func humanBytes(n int64) string {
 	default:
 		return fmt.Sprintf("%.1f GiB", float64(n)/float64(k*k*k))
 	}
+}
+
+// redirectToCaseAfterProjector waits for the projector to apply the
+// most recent event on the case, then 303s back to /cases/{id}.
+// Without the wait, the user's redirected GET races the projector
+// and they see stale state (old stage, old kind, old timeline entry).
+// Bounded at 3s; if the wait times out we redirect anyway.
+func (h *handlers) redirectToCaseAfterProjector(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+	waitForCaseAdvance(r.Context(), h.pool, id, 3*time.Second)
+	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
 }
 
 // waitForCaseAdvance polls until the projection catches up.
