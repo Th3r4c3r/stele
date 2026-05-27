@@ -144,10 +144,13 @@ func runServer() int {
 	//      Manual rotation when it expires.
 	//   3. Neither: telemetry routes disabled; rest of app unchanged.
 	telemetryRepo := telemetry.NewRepo(pool)
-	var telemetrySvc *telemetry.Service
+	var (
+		newplatClient *newplat.Client
+		telemetrySvc  *telemetry.Service
+	)
 	switch {
 	case os.Getenv("STELE_NEWPLAT_ACCOUNT") != "" && os.Getenv("STELE_NEWPLAT_PASSWORD") != "":
-		client := newplat.NewWithCredentials(
+		newplatClient = newplat.NewWithCredentials(
 			os.Getenv("STELE_NEWPLAT_TOKEN"),
 			newplat.Credentials{
 				CustomerName: envOr("STELE_NEWPLAT_CUSTOMER", "VMOTO"),
@@ -155,14 +158,15 @@ func runServer() int {
 				UserAccount:  os.Getenv("STELE_NEWPLAT_ACCOUNT"),
 				UserPassword: os.Getenv("STELE_NEWPLAT_PASSWORD"),
 			})
-		telemetrySvc = telemetry.NewService(client, telemetryRepo)
+		telemetrySvc = telemetry.NewService(newplatClient, telemetryRepo)
 		slog.Info("telemetry: newplat client with auto-refresh configured",
 			"account", os.Getenv("STELE_NEWPLAT_ACCOUNT"))
 	case os.Getenv("STELE_NEWPLAT_TOKEN") != "":
-		telemetrySvc = telemetry.NewService(newplat.New(os.Getenv("STELE_NEWPLAT_TOKEN")), telemetryRepo)
+		newplatClient = newplat.New(os.Getenv("STELE_NEWPLAT_TOKEN"))
+		telemetrySvc = telemetry.NewService(newplatClient, telemetryRepo)
 		slog.Info("telemetry: newplat client with static token configured (no auto-refresh)")
 	default:
-		slog.Info("telemetry: no newplat credentials, /admin/telemetry disabled")
+		slog.Info("telemetry: no newplat credentials, /admin/telemetry + import-from-vin disabled")
 	}
 
 	mux := http.NewServeMux()
@@ -181,6 +185,7 @@ func runServer() int {
 		DocStore:     docStorage,
 		Telemetry:    telemetryRepo,
 		TelemetrySvc: telemetrySvc,
+		Newplat:      newplatClient,
 		BaseURL:      baseURL,
 	})
 	// Operational endpoint (public, no auth). Debug endpoints removed

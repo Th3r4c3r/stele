@@ -27,6 +27,7 @@ import (
 	"github.com/Th3r4c3r/stele/internal/event"
 	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/mail"
+	"github.com/Th3r4c3r/stele/internal/newplat"
 	"github.com/Th3r4c3r/stele/internal/part"
 	"github.com/Th3r4c3r/stele/internal/search"
 	"github.com/Th3r4c3r/stele/internal/telemetry"
@@ -52,6 +53,7 @@ type Deps struct {
 	DocStore      *document.Storage
 	Telemetry     *telemetry.Repo     // optional; nil disables /admin/telemetry
 	TelemetrySvc  *telemetry.Service  // optional; nil disables sync POSTs
+	Newplat       *newplat.Client     // optional; nil disables /admin/vehicles/import-from-vin
 	BaseURL       string
 }
 
@@ -88,6 +90,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 		vehicles: d.Vehicles,
 		parts:    d.Parts,
 		users:    d.Users,
+		newplat:  d.Newplat,
 	}
 
 	auditRepo := audit.NewRepo(d.Pool)
@@ -152,6 +155,10 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /admin/vehicles/import-models", wrapAdmin(masters.vehiclesImportModels))
 	mux.Handle("GET /admin/parts", wrapAdmin(masters.partsPage))
 	mux.Handle("POST /admin/parts/import", wrapAdmin(masters.partsImport))
+	if d.Newplat != nil {
+		mux.Handle("GET /admin/vehicles/import-from-vin", wrapAdmin(masters.vehicleImportFromVINPage))
+		mux.Handle("POST /admin/vehicles/import-from-vin", wrapAdmin(masters.vehicleImportFromVINCommit))
+	}
 	mux.Handle("GET /admin/recalls", wrapAdmin(adm.recallsList))
 	mux.Handle("GET /admin/recalls/{code}", wrapAdmin(adm.recallDetail))
 	mux.Handle("GET /admin/audit", wrapAdmin(adm.auditList))

@@ -1,12 +1,17 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Th3r4c3r/stele/internal/audit"
+	"github.com/Th3r4c3r/stele/internal/newplat"
 	"github.com/Th3r4c3r/stele/internal/part"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
 	"github.com/Th3r4c3r/stele/internal/vehicle"
@@ -23,6 +28,7 @@ type mastersHandlers struct {
 	vehicles *vehicle.Repo
 	parts    *part.Repo
 	users    *userpkg.Repo
+	newplat  *newplat.Client // nil disables /admin/vehicles/import-from-vin
 }
 
 // --- vehicles ---
@@ -214,4 +220,172 @@ func toPartErrs(in []part.ImportError) []templates.ImportRowError {
 		out[i] = templates.ImportRowError{Line: e.Line, Reason: e.Reason}
 	}
 	return out
+}
+
+// --- import single VIN from newplat ---
+
+// vehicleImportFromVINPage handles GET /admin/vehicles/import-from-vin.
+// Queries newplat for the VIN, builds a preview form pre-filled with
+// the fields newplat exposes, lets the operator confirm / edit / pick
+// the right Stele model_code, then POST commits.
+func (m *mastersHandlers) vehicleImportFromVINPage(w http.ResponseWriter, r *http.Request) {
+	vin := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("vin")))
+	ret := safeReturn(strings.TrimSpace(r.URL.Query().Get("return")))
+	if len(vin) != 17 {
+		http.Error(w, "vin must be 17 chars", http.StatusBadRequest)
+		return
+	}
+	// Already in master? Short-circuit to the return path.
+	if exists, err := m.vehicles.Exists(r.Context(), vin); err == nil && exists {
+		http.Redirect(w, r, ret, http.StatusSeeOther)
+		return
+	}
+
+	// Fetch newplat. ErrNotFound → friendly "not on newplat" page;
+	// ErrTokenInvalid (after the client tried auto-refresh) → same
+	// page with a token-issue hint; other errors → same page with
+	// the raw error.
+	detail, err := m.newplat.FetchVIN(r.Context(), vin)
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = templates.AdminVINImportNotFound(navFor(r.Context(), m.users),
+			templates.VINImportNotFound{VIN: vin, ReturnURL: ret, Reason: friendlyNewplatErr(err)}).
+			Render(r.Context(), w)
+		return
+	}
+
+	models, err := m.vehicles.ListModels(r.Context())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+
+	preview := templates.VINImportPreview{
+		VIN:              vin,
+		ReturnURL:        ret,
+		ManufacturedYear: vehicle.YearFromVIN(vin),
+		Models:           toAdminModelRows(models),
+	}
+	if detail.Pojo != nil {
+		preview.NewplatCountry = "" // pojo.countryCode is a mobile code, not ISO
+	}
+	preview.NewplatModelName = detail.CarBaseInfo.CarModelName
+	preview.MotorSN = detail.CarBaseInfo.CarMotorNumber
+	if detail.Device != nil {
+		if t := newplat.ParseNewplatTime(detail.Device.SimStartTime); !t.IsZero() {
+			// proDate would be cleaner but Device struct currently
+			// does not expose it; SimStartTime is a close proxy
+			// (issued ~same day as production at the pilot).
+			preview.SoldAt = t.Format("2006-01-02")
+		}
+	}
+	preview.PreselectedCode = guessModelCode(preview.NewplatModelName, models)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = templates.AdminVINImportPage(navFor(r.Context(), m.users), preview).
+		Render(r.Context(), w)
+}
+
+// vehicleImportFromVINCommit handles POST /admin/vehicles/import-from-vin.
+// Builds a Vehicle from the form, upserts, redirects to the return URL.
+func (m *mastersHandlers) vehicleImportFromVINCommit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	vin := strings.ToUpper(strings.TrimSpace(r.PostForm.Get("vin")))
+	modelCode := strings.TrimSpace(r.PostForm.Get("model_code"))
+	if len(vin) != 17 || modelCode == "" {
+		http.Error(w, "vin and model_code required", http.StatusBadRequest)
+		return
+	}
+	ret := safeReturn(strings.TrimSpace(r.PostForm.Get("return")))
+
+	v := vehicle.Vehicle{VIN: vin, ModelCode: modelCode}
+	if y, err := strconv.Atoi(strings.TrimSpace(r.PostForm.Get("manufactured_year"))); err == nil && y > 1900 {
+		v.ManufacturedYear = &y
+	}
+	if c := strings.ToUpper(strings.TrimSpace(r.PostForm.Get("country"))); c != "" {
+		v.Country = &c
+	}
+	if col := strings.TrimSpace(r.PostForm.Get("color")); col != "" {
+		v.Color = &col
+	}
+	if sn := strings.TrimSpace(r.PostForm.Get("motor_sn")); sn != "" {
+		v.MotorSN = &sn
+	}
+	if sa := strings.TrimSpace(r.PostForm.Get("sold_at")); sa != "" {
+		if t, err := time.Parse("2006-01-02", sa); err == nil {
+			v.SoldAt = &t
+		}
+	}
+	if err := m.vehicles.UpsertVehicle(r.Context(), v); err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	audit.SetSummary(r.Context(), fmt.Sprintf("imported vehicle %s (model %s) from newplat", vin, modelCode))
+	http.Redirect(w, r, ret, http.StatusSeeOther)
+}
+
+// guessModelCode picks the most-likely Stele model_code for a
+// newplat carModelName. Heuristic: normalised case-insensitive
+// prefix match against vehicle_models.name. Returns "" when zero
+// or multiple matches make the choice ambiguous; the form then
+// shows an unselected dropdown.
+func guessModelCode(newplatName string, models []vehicle.Model) string {
+	needle := normalizeModelName(newplatName)
+	if needle == "" {
+		return ""
+	}
+	matches := make([]string, 0, 2)
+	for _, m := range models {
+		if strings.HasPrefix(normalizeModelName(m.Name), needle) {
+			matches = append(matches, m.Code)
+			if len(matches) > 1 {
+				return "" // ambiguous, let the operator pick.
+			}
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0]
+	}
+	return ""
+}
+
+func normalizeModelName(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r - 32)
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func toAdminModelRows(in []vehicle.Model) []templates.AdminModelRow {
+	out := make([]templates.AdminModelRow, len(in))
+	for i, mo := range in {
+		out[i] = templates.AdminModelRow{
+			Code: mo.Code, Name: mo.Name,
+			Generation: mo.Generation, Segment: mo.Segment, CapacityKWh: mo.CapacityKWh,
+		}
+	}
+	return out
+}
+
+// friendlyNewplatErr maps newplat client errors to operator-readable
+// strings on the "not found" page. ErrTokenInvalid is the only one
+// that requires action from the admin (refresh the credentials).
+func friendlyNewplatErr(err error) string {
+	switch {
+	case errors.Is(err, newplat.ErrNotFound):
+		return "VIN not present on newplat (the bike may never have been activated by HQ)"
+	case errors.Is(err, newplat.ErrTokenInvalid):
+		return "newplat token expired AND auto-refresh failed (check STELE_NEWPLAT_ACCOUNT / STELE_NEWPLAT_PASSWORD)"
+	default:
+		return err.Error()
+	}
 }

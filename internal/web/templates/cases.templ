@@ -582,7 +582,10 @@ templ caseSummary(c CaseRow, vehicle *VehicleInfo) {
 							</details>
 						}
 					} else {
-						<small class="muted">VIN not in master <a href="/admin/vehicles">(import)</a></small>
+						<small class="muted">
+							VIN not in master
+							<a href={ templ.URL("/admin/vehicles/import-from-vin?vin=" + c.VIN + "&return=/cases/" + c.ID.String()) }>(import from newplat)</a>
+						</small>
 					}
 				</div>
 			</div>

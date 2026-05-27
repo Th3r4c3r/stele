@@ -127,6 +127,15 @@ func (r *Repo) CountVehicles(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// Exists is a cheap "is this VIN in the master?" probe. Used by the
+// import-from-newplat preview to short-circuit when the VIN already
+// has a row.
+func (r *Repo) Exists(ctx context.Context, vin string) (bool, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM vehicles WHERE vin = $1`, vin).Scan(&n)
+	return n > 0, err
+}
+
 // UpsertModel inserts or updates a model row by code. Idempotent.
 func (r *Repo) UpsertModel(ctx context.Context, m Model) error {
 	_, err := r.pool.Exec(ctx, `
@@ -407,6 +416,34 @@ func mustList(list []Model, err error) []Model {
 		return nil
 	}
 	return list
+}
+
+// YearFromVIN derives the manufacture year from char 10 of the VIN
+// using the ISO 3779 table. Returns 0 when the char is outside the
+// supported window (pre-2021 or non-letter). Stele only consumes the
+// 2021-2027 slice that matches the Vmoto pilot fleet.
+func YearFromVIN(vin string) int {
+	if len(vin) < 10 {
+		return 0
+	}
+	switch vin[9] {
+	case 'M':
+		return 2021
+	case 'N':
+		return 2022
+	case 'P':
+		return 2023
+	case 'R':
+		return 2024
+	case 'S':
+		return 2025
+	case 'T':
+		return 2026
+	case 'V':
+		return 2027
+	default:
+		return 0
+	}
 }
 
 // headerIndex maps the column names found in the CSV header to their
