@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1178,21 +1179,40 @@ func (h *handlers) redirectToCaseAfterProjector(w http.ResponseWriter, r *http.R
 }
 
 // waitForCaseAdvance polls until the projection catches up.
+//
+// History bug, fixed 2026-05-27: the original query used MAX(events.id)
+// which fails in Postgres (no built-in aggregate for the uuid type),
+// so the QueryRow always returned an error, the wait always hit its
+// timeout, and EVERY case mutation took the full bound (3s) before
+// redirecting. Latent since M15, surfaced when the helper was applied
+// to every mutation in M14. Replaced with a scalar subquery that
+// reads the latest event id directly (UUIDv7 is time-ordered, so
+// ORDER BY id DESC LIMIT 1 returns the most recent event).
 func waitForCaseAdvance(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, dur time.Duration) {
 	deadline := time.Now().Add(dur)
 	for time.Now().Before(deadline) {
-		var cursorID, maxID uuid.UUID
+		var cursorID, latestEventID uuid.UUID
 		err := pool.QueryRow(ctx, `
-			SELECT cc.last_event_id, COALESCE(MAX(e.id), cc.last_event_id)
+			SELECT cc.last_event_id,
+			       COALESCE(
+			           (SELECT id FROM events
+			             WHERE aggregate_id = cc.id
+			          ORDER BY id DESC
+			             LIMIT 1),
+			           cc.last_event_id
+			       )
 			FROM current_cases cc
-			LEFT JOIN events e ON e.aggregate_id = cc.id
 			WHERE cc.id = $1
-			GROUP BY cc.last_event_id
-		`, id).Scan(&cursorID, &maxID)
-		if err == nil && cursorID.String() >= maxID.String() {
+		`, id).Scan(&cursorID, &latestEventID)
+		if err != nil {
+			// Log on first miss so future regressions surface clearly
+			// instead of vanishing into the 3-second timeout again.
+			slog.Warn("waitForCaseAdvance query failed; keeping polling",
+				"case_id", id, "err", err)
+		} else if cursorID == latestEventID {
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
