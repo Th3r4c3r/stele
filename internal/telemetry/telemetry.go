@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -114,6 +115,11 @@ func (s *Service) SyncBatch(ctx context.Context, vins []string) SyncResult {
 		case errors.Is(err, newplat.ErrNotFound):
 			r.NotFound++
 		case err != nil:
+			// Per-VIN errors are easy to miss when summarised in the
+			// audit row ("1 errors"). Log each one so post-mortems
+			// have a paper trail; the audit row is for the overview.
+			slog.Error("telemetry.SyncBatch per-VIN failure",
+				"vin", vin, "err", err)
 			r.Errors = append(r.Errors, SyncError{VIN: vin, Reason: err.Error()})
 		default:
 			r.Synced++
