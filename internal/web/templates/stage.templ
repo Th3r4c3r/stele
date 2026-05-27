@@ -128,7 +128,7 @@ templ stageBadge(stage string) {
 // case detail. Closed cases are read-only: stepper still rendered
 // (so history is visible) but no transition form below.
 templ StageStepper(c CaseRow) {
-	<section class="stage-stepper">
+	<section class="stage-stepper" id="stage-stepper">
 		<ol>
 			for _, s := range buildSteps(c.Stage, c.StageChangedAt) {
 				<li class={ stageStepClass(s.State) }>
@@ -155,8 +155,19 @@ templ StageStepper(c CaseRow) {
 // `to` (target stage) + optional `reason`. The handler resolves the
 // current stage server-side so a stale client cannot send a wrong
 // `from`.
+// StageChangeForm uses HTMX so the stepper morphs in place instead
+// of a full-page redirect. The handler returns the new stepper as
+// the primary response and the updated timeline as an OOB swap so
+// the operator sees both changes simultaneously. Without HTMX the
+// form falls back to a regular POST (handler emits 303 → page
+// reload), preserving accessibility.
 templ StageChangeForm(caseID uuid.UUID, currentStage string) {
-	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/stage") } class="form inline">
+	<form method="POST"
+	      action={ templ.URL("/cases/" + caseID.String() + "/stage") }
+	      hx-post={ "/cases/" + caseID.String() + "/stage" }
+	      hx-target="#stage-stepper"
+	      hx-swap="outerHTML"
+	      class="form inline">
 		<label>
 			Move to
 			<select name="to" required>
@@ -171,4 +182,30 @@ templ StageChangeForm(caseID uuid.UUID, currentStage string) {
 		</label>
 		<button type="submit" class="btn primary">Change stage</button>
 	</form>
+}
+
+// StageStepperWithTimelineOOB is the response body for HX-Request
+// stage transitions: the new stepper (HTMX primary swap target)
+// followed by the timeline tagged as an out-of-band swap so the
+// browser updates both regions from a single response.
+templ StageStepperWithTimelineOOB(c CaseRow, timeline []TimelineEntry) {
+	@StageStepper(c)
+	<ol class="timeline" id="timeline" hx-swap-oob="outerHTML:#timeline">
+		@timelineEntries(timeline)
+	</ol>
+}
+
+// timelineEntries renders just the <li> rows. Shared between the
+// full CaseTimeline (which wraps it in <ol>) and OOB swaps from
+// HTMX transitions (which provide their own wrapping <ol>).
+templ timelineEntries(entries []TimelineEntry) {
+	for _, e := range entries {
+		<li>
+			<time>{ e.When.Format("2006-01-02 15:04") }</time>
+			<strong>{ e.Type }</strong>
+			if e.Summary != "" {
+				<p>{ e.Summary }</p>
+			}
+		</li>
+	}
 }

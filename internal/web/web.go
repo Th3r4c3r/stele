@@ -831,6 +831,24 @@ func (h *handlers) changeStage(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	// HTMX path: morph stepper + timeline in place, no full reload.
+	// Plain form post falls back to redirect (accessibility-safe).
+	if r.Header.Get("HX-Request") == "true" {
+		waitForCaseAdvance(r.Context(), h.pool, id, 3*time.Second)
+		updated, err := h.queryOneCase(r.Context(), id)
+		if err != nil {
+			httpErr(w, err)
+			return
+		}
+		timeline, err := h.queryTimeline(r.Context(), id)
+		if err != nil {
+			httpErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = templates.StageStepperWithTimelineOOB(updated, timeline).Render(r.Context(), w)
+		return
+	}
 	h.redirectToCaseAfterProjector(w, r, id)
 }
 
