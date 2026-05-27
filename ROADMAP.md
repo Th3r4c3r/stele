@@ -157,6 +157,14 @@ runs on the Hetzner instance at a URL Yan can open.
 - Surfaced after M9.2 because UI case creation finally went live with
   real users. Race was pre-existing in M1 polling design. ✅
 
+## M14.1 — Repair workflow analytics (DONE 2026-05-27)
+- /analytics/stages page. ✅
+- Time-in-stage via LEAD() window over CaseOpened + StageChanged. ✅
+- Key-to-key cycle time, overall + per kind. ✅
+- Currently-stuck open cases, per stage, avg + max days. ✅
+- HTMX morph for stepper transitions (in-place update, no page reload). ✅
+- Bug fix: waitForCaseAdvance MAX(uuid) → scalar subquery. ✅
+
 ## M14 — Repair workflow stage + stepper (DONE 2026-05-27)
 - Second axis orthogonal to status: stage in {new, diagnosis,
   parts_ordered, parts_waiting, repair, resolved}. ✅
