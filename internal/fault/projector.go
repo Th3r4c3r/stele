@@ -33,6 +33,8 @@ func applyCurrentCases(ctx context.Context, tx pgx.Tx, ev event.Event) error {
 		return applyClassified(ctx, tx, ev)
 	case EventCaseClosed:
 		return applyCaseClosed(ctx, tx, ev)
+	case EventStageChanged:
+		return applyStageChanged(ctx, tx, ev)
 	default:
 		// Forward-compatibility: unknown event type does not block the
 		// runner. Will surface as "this case has events we don't render"
@@ -135,12 +137,18 @@ func applyCaseAssigned(ctx context.Context, tx pgx.Tx, ev event.Event) error {
 }
 
 func applyCaseClosed(ctx context.Context, tx pgx.Tx, ev event.Event) error {
+	// Closing a case pins the repair stage to 'resolved'. Idempotent:
+	// if stage is already 'resolved' (because StageChanged got there
+	// first), stage_changed_at stays at the explicit transition time
+	// rather than being bumped to the close time.
 	const q = `
 		UPDATE current_cases
-		   SET status        = 'closed',
-		       closed_at     = $2,
-		       last_update   = $2,
-		       last_event_id = $3
+		   SET status           = 'closed',
+		       closed_at        = $2,
+		       last_update      = $2,
+		       last_event_id    = $3,
+		       stage            = CASE WHEN stage = 'resolved' THEN stage ELSE 'resolved' END,
+		       stage_changed_at = CASE WHEN stage = 'resolved' THEN stage_changed_at ELSE $2 END
 		 WHERE id = $1
 		   AND last_event_id < $3
 		   AND status <> 'closed'
@@ -148,6 +156,33 @@ func applyCaseClosed(ctx context.Context, tx pgx.Tx, ev event.Event) error {
 	_, err := tx.Exec(ctx, q, ev.AggregateID, ev.OccurredAt, ev.ID)
 	if err != nil {
 		return fmt.Errorf("applyCaseClosed: %w", err)
+	}
+	return nil
+}
+
+func applyStageChanged(ctx context.Context, tx pgx.Tx, ev event.Event) error {
+	v, err := decodeAs[StageChanged](EventStageChanged, ev.Payload)
+	if err != nil {
+		return err
+	}
+	if !IsKnownStage(v.To) {
+		// Forward-compat: unknown stage from a future code version
+		// gets ignored rather than corrupting the column (CHECK
+		// constraint would reject the UPDATE anyway).
+		return nil
+	}
+	const q = `
+		UPDATE current_cases
+		   SET stage            = $4,
+		       stage_changed_at = $2,
+		       last_update      = $2,
+		       last_event_id    = $3
+		 WHERE id = $1
+		   AND last_event_id < $3
+	`
+	_, err = tx.Exec(ctx, q, ev.AggregateID, ev.OccurredAt, ev.ID, v.To)
+	if err != nil {
+		return fmt.Errorf("applyStageChanged: %w", err)
 	}
 	return nil
 }

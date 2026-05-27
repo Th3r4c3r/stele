@@ -24,6 +24,7 @@ const (
 	EventCaseClosed   = "CaseClosed"
 	EventPartReplaced = "PartReplaced"
 	EventPartQuoted   = "PartQuoted"
+	EventStageChanged = "StageChanged"
 )
 
 // Part kind discriminator: both events carry it for downstream cost
@@ -50,6 +51,39 @@ const (
 	StatusClassified = "classified"
 	StatusClosed     = "closed"
 )
+
+// Stage values track the repair workflow. Orthogonal to Status: a
+// classified case can be in any repair stage. Closing a case auto-
+// transitions stage to 'resolved' in the projector. See migration
+// 0016. The order in AllStages is the canonical forward sequence
+// shown by the UI stepper, but transitions are not constrained to
+// neighbours: an operator can jump to any stage to model edge cases
+// (parts came faster than expected, regression back to diagnosis,
+// etc.).
+const (
+	StageNew          = "new"
+	StageDiagnosis    = "diagnosis"
+	StagePartsOrdered = "parts_ordered"
+	StagePartsWaiting = "parts_waiting"
+	StageRepair       = "repair"
+	StageResolved     = "resolved"
+)
+
+// AllStages is the canonical forward order. UI iterates this for the
+// stepper.
+var AllStages = []string{
+	StageNew, StageDiagnosis, StagePartsOrdered, StagePartsWaiting, StageRepair, StageResolved,
+}
+
+// IsKnownStage returns true if s is in AllStages.
+func IsKnownStage(s string) bool {
+	for _, x := range AllStages {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
 
 // Kind values for classified cases. Closed enum, enforced by the
 // projector and by a CHECK constraint on current_cases.
@@ -138,10 +172,23 @@ type PartQuoted struct {
 
 // CaseClosed is the terminal event. Status -> "closed". May arrive
 // before any Classified (closed-from-triage); in that case the row's
-// kind stays NULL.
+// kind stays NULL. The projector also pins stage='resolved' on this
+// event (operationally a closed case is a resolved case).
 type CaseClosed struct {
 	Resolution string `json:"resolution"`
 	ClosedBy   string `json:"closed_by"`
+}
+
+// StageChanged records a transition through the repair workflow.
+// `From` is informational (projector source-of-truth is the row's
+// current stage, not the event payload); kept so the timeline can
+// render "moved from Diagnosis to Parts ordered" without resolving
+// state from a sibling event.
+type StageChanged struct {
+	From     string    `json:"from"`
+	To       string    `json:"to"`
+	Reason   string    `json:"reason,omitempty"`
+	ByUserID uuid.UUID `json:"by_user_id"`
 }
 
 // MarshalPayload encodes a domain event struct as raw JSON for storage.
@@ -196,6 +243,12 @@ func DecodePayload(eventType string, payload json.RawMessage) (any, error) {
 		var v CaseClosed
 		if err := json.Unmarshal(payload, &v); err != nil {
 			return nil, fmt.Errorf("decode CaseClosed: %w", err)
+		}
+		return v, nil
+	case EventStageChanged:
+		var v StageChanged
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return nil, fmt.Errorf("decode StageChanged: %w", err)
 		}
 		return v, nil
 	default:

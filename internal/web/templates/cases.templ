@@ -11,21 +11,23 @@ import (
 
 // CaseRow is the projection of one row in current_cases, shaped for views.
 type CaseRow struct {
-	ID            uuid.UUID
-	Number        int64 // human-readable id, displayed as "C-1234"
-	Status        string
-	Kind          *string
-	Dealer        string
-	VIN           string
-	FaultCode     string
-	Description   string
-	OpenedAt      time.Time
-	ClassifiedAt  *time.Time
-	ClosedAt      *time.Time
-	LastUpdate    time.Time
-	NoteCount     int
-	AssigneeID    *uuid.UUID
-	AssigneeName  string // resolved by the handler ("Mario Bossi") or "" if not assigned
+	ID             uuid.UUID
+	Number         int64 // human-readable id, displayed as "C-1234"
+	Status         string
+	Kind           *string
+	Dealer         string
+	VIN            string
+	FaultCode      string
+	Description    string
+	OpenedAt       time.Time
+	ClassifiedAt   *time.Time
+	ClosedAt       *time.Time
+	LastUpdate     time.Time
+	NoteCount      int
+	AssigneeID     *uuid.UUID
+	AssigneeName   string // resolved by the handler ("Mario Bossi") or "" if not assigned
+	Stage          string // repair workflow stage; see fault.AllStages
+	StageChangedAt time.Time
 }
 
 // Display returns the user-facing identifier like "C-1234".
@@ -389,6 +391,7 @@ templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption, do
 		<h1>Case <strong>{ c.Display() }</strong> <span class="muted">&middot; { c.ID.String()[:8] }</span></h1>
 		<a href="/cases" class="btn">Back to list</a>
 	</section>
+	@StageStepper(c)
 	@caseSummary(c, vehicle)
 	@TelemetryBlock(tele)
 	<section>

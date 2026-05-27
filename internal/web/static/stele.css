@@ -572,3 +572,102 @@ ol.timeline p { margin: 4px 0 0; font-size: 14px; }
 }
 .dot-online  { color: #16a34a; }
 .dot-offline { color: #9ca3af; }
+
+/* === Stage stepper (M14) ========================================== */
+.stage-stepper {
+	margin: 16px 0 24px;
+	padding: 16px 18px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+}
+.stage-stepper ol {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	display: flex;
+	gap: 0;
+	overflow-x: auto;
+}
+.stage-stepper li.step {
+	flex: 1 1 0;
+	min-width: 110px;
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 0 6px;
+}
+/* Connector line: pseudo-element on every step except the first. */
+.stage-stepper li.step + li.step::before {
+	content: "";
+	position: absolute;
+	left: -50%;
+	right: 50%;
+	top: 9px;       /* aligns with the dot's vertical centre */
+	height: 2px;
+	background: var(--border);
+	z-index: 0;
+}
+.stage-stepper li.step-done + li.step::before,
+.stage-stepper li.step-current::before {
+	background: #16a34a; /* completed connector is green */
+}
+.stage-stepper .step-dot {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #ffffff;
+	border: 2px solid var(--border);
+	position: relative;
+	z-index: 1;
+}
+.stage-stepper .step-done .step-dot {
+	background: #16a34a;
+	border-color: #16a34a;
+}
+.stage-stepper .step-current .step-dot {
+	background: #2563eb;
+	border-color: #2563eb;
+	box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18);
+}
+.stage-stepper .step-todo .step-dot {
+	background: #ffffff;
+	border-color: var(--border);
+}
+.stage-stepper .step-body {
+	margin-top: 8px;
+	text-align: center;
+}
+.stage-stepper .step-label {
+	font-size: 12px;
+	color: var(--fg-muted);
+	line-height: 1.2;
+}
+.stage-stepper .step-current .step-label {
+	color: var(--fg);
+	font-weight: 600;
+}
+.stage-stepper .step-done .step-label {
+	color: var(--fg);
+}
+.stage-stepper .step-days {
+	margin-top: 2px;
+	font-size: 11px;
+	color: #2563eb;
+	font-weight: 600;
+}
+.stage-stepper details.stage-actions {
+	margin-top: 18px;
+	border-top: 1px dashed var(--border);
+	padding-top: 12px;
+}
+.stage-stepper details.stage-actions summary {
+	cursor: pointer;
+	font-size: 13px;
+	color: var(--fg-muted);
+}
+.stage-stepper details.stage-actions[open] summary {
+	color: var(--fg);
+	margin-bottom: 10px;
+}

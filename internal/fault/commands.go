@@ -279,6 +279,49 @@ func RecordPartQuoted(
 	return nil
 }
 
+// ChangeStage appends a StageChanged event. `to` must be a known
+// stage; equal-to-current is rejected so we don't pile up no-op
+// events that pollute the timeline. The projector decides whether
+// the transition wins (last-write per row); this command's job is
+// only validation + append.
+func ChangeStage(
+	ctx context.Context,
+	store *event.PostgresStore,
+	caseID, byUserID uuid.UUID,
+	from, to, reason string,
+) error {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	reason = strings.TrimSpace(reason)
+	if caseID == uuid.Nil {
+		return fmt.Errorf("%w: case_id required", ErrValidation)
+	}
+	if byUserID == uuid.Nil {
+		return fmt.Errorf("%w: by_user_id required", ErrValidation)
+	}
+	if !IsKnownStage(to) {
+		return fmt.Errorf("%w: unknown stage %q", ErrValidation, to)
+	}
+	if from != "" && from == to {
+		return fmt.Errorf("%w: case is already in %q", ErrValidation, to)
+	}
+	payload, err := MarshalPayload(StageChanged{From: from, To: to, Reason: reason, ByUserID: byUserID})
+	if err != nil {
+		return err
+	}
+	ev := event.Event{
+		AggregateType: AggregateType,
+		AggregateID:   caseID,
+		Type:          EventStageChanged,
+		Payload:       payload,
+		OccurredAt:    time.Now().UTC(),
+	}
+	if err := store.Append(ctx, []event.Event{ev}); err != nil {
+		return fmt.Errorf("ChangeStage: append: %w", err)
+	}
+	return nil
+}
+
 // CloseCase appends a CaseClosed event. Allowed from any status;
 // closing an already-closed case is idempotent at the projector level.
 func CloseCase(ctx context.Context, store *event.PostgresStore, caseID uuid.UUID, p CaseClosed) error {

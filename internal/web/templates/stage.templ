@@ -1,0 +1,151 @@
+package templates
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// stageStep is a single bubble in the horizontal stepper.
+type stageStep struct {
+	Code  string // canonical (e.g. "parts_ordered")
+	Label string // UI label (e.g. "Parts ordered")
+	State string // "done" | "current" | "todo"
+	Days  string // age string, only set on current
+}
+
+// buildSteps walks the canonical stage order and assigns a state to
+// each based on the case's current stage. Stages before current are
+// done; current is current; rest is todo. A closed case forces every
+// previous stage to done + current stage to "resolved".
+func buildSteps(currentStage string, stageChangedAt time.Time) []stageStep {
+	steps := []stageStep{
+		{Code: "new", Label: "New"},
+		{Code: "diagnosis", Label: "Diagnosis"},
+		{Code: "parts_ordered", Label: "Parts ordered"},
+		{Code: "parts_waiting", Label: "Awaiting parts"},
+		{Code: "repair", Label: "Repair"},
+		{Code: "resolved", Label: "Resolved"},
+	}
+	currentIdx := -1
+	for i, s := range steps {
+		if s.Code == currentStage {
+			currentIdx = i
+			break
+		}
+	}
+	for i := range steps {
+		switch {
+		case currentIdx < 0:
+			steps[i].State = "todo"
+		case i < currentIdx:
+			steps[i].State = "done"
+		case i == currentIdx:
+			steps[i].State = "current"
+			steps[i].Days = stageAge(stageChangedAt)
+		default:
+			steps[i].State = "todo"
+		}
+	}
+	return steps
+}
+
+// stageAge formats time-in-stage as a coarse "N days" / "N hours" /
+// "today". Mirrors the telemetry humanTimeAgo style, kept separate
+// because we want "today" for under-1-day instead of "just now".
+func stageAge(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	d := time.Since(t)
+	switch {
+	case d < 0:
+		return ""
+	case d < time.Hour:
+		return fmt.Sprintf("%d min", int(d/time.Minute))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d h", int(d/time.Hour))
+	default:
+		days := int(d / (24 * time.Hour))
+		if days == 1 {
+			return "1 day"
+		}
+		return fmt.Sprintf("%d days", days)
+	}
+}
+
+// stageStepClass exists so the templ side can rely on a single attr
+// helper rather than a chain of conditionals.
+func stageStepClass(state string) string { return "step step-" + state }
+
+// nextStages returns the list of (code,label) options shown in the
+// transition dropdown. We list every stage EXCEPT the current one
+// (no-op transitions are rejected by the command anyway). Order is
+// canonical so the operator sees "forward" actions at the top.
+func nextStages(currentStage string) []stageStep {
+	all := []stageStep{
+		{Code: "new", Label: "New"},
+		{Code: "diagnosis", Label: "Diagnosis"},
+		{Code: "parts_ordered", Label: "Parts ordered"},
+		{Code: "parts_waiting", Label: "Awaiting parts"},
+		{Code: "repair", Label: "Repair"},
+		{Code: "resolved", Label: "Resolved"},
+	}
+	out := make([]stageStep, 0, len(all)-1)
+	for _, s := range all {
+		if s.Code != currentStage {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// StageStepper renders the horizontal lifecycle bar at the top of
+// case detail. Closed cases are read-only: stepper still rendered
+// (so history is visible) but no transition form below.
+templ StageStepper(c CaseRow) {
+	<section class="stage-stepper">
+		<ol>
+			for _, s := range buildSteps(c.Stage, c.StageChangedAt) {
+				<li class={ stageStepClass(s.State) }>
+					<span class="step-dot"></span>
+					<div class="step-body">
+						<div class="step-label">{ s.Label }</div>
+						if s.Days != "" {
+							<div class="step-days">{ s.Days }</div>
+						}
+					</div>
+				</li>
+			}
+		</ol>
+		if c.Status != "closed" {
+			<details class="stage-actions">
+				<summary>Change stage</summary>
+				@StageChangeForm(c.ID, c.Stage)
+			</details>
+		}
+	</section>
+}
+
+// StageChangeForm is the POST form for /cases/{id}/stage. Posts
+// `to` (target stage) + optional `reason`. The handler resolves the
+// current stage server-side so a stale client cannot send a wrong
+// `from`.
+templ StageChangeForm(caseID uuid.UUID, currentStage string) {
+	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/stage") } class="form inline">
+		<label>
+			Move to
+			<select name="to" required>
+				for _, s := range nextStages(currentStage) {
+					<option value={ s.Code }>{ s.Label }</option>
+				}
+			</select>
+		</label>
+		<label>
+			Reason (optional)
+			<input type="text" name="reason" maxlength="200" placeholder="e.g. parts delayed by supplier"/>
+		</label>
+		<button type="submit" class="btn primary">Change stage</button>
+	</form>
+}

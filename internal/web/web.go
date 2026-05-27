@@ -129,6 +129,7 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("POST /cases/{id}/close", wrap(h.closeCase))
 	mux.Handle("POST /cases/{id}/transfer", wrap(h.transferCase))
 	mux.Handle("POST /cases/{id}/parts", wrap(h.recordPart))
+	mux.Handle("POST /cases/{id}/stage", wrap(h.changeStage))
 	mux.Handle("POST /cases/{id}/documents", wrap(docs.uploadDocument))
 	mux.Handle("GET /documents/{id}/raw", wrap(docs.downloadDocument))
 	mux.Handle("POST /documents/{id}/delete", wrap(docs.deleteDocument))
@@ -789,6 +790,41 @@ func (h *handlers) recordPart(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
 }
 
+// changeStage handles POST /cases/{id}/stage. The form carries the
+// target stage and an optional reason; the current stage is pulled
+// from the read model so the operator does not have to send it.
+func (h *handlers) changeStage(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+	byUserID, err := userpkg.FromCtx(r.Context())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	to := strings.TrimSpace(r.PostForm.Get("to"))
+	reason := strings.TrimSpace(r.PostForm.Get("reason"))
+	current, err := h.queryOneCase(r.Context(), id)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	if err := fault.ChangeStage(r.Context(), h.store, id, byUserID, current.Stage, to, reason); err != nil {
+		if errors.Is(err, fault.ErrValidation) {
+			http.Error(w, friendlyValidation(err), http.StatusUnprocessableEntity)
+			return
+		}
+		httpErr(w, err)
+		return
+	}
+	http.Redirect(w, r, "/cases/"+id.String(), http.StatusSeeOther)
+}
+
 func (h *handlers) transferCase(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseID(w, r)
 	if !ok {
@@ -835,7 +871,8 @@ func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, as
 	args := []any{}
 	q := `
 		SELECT id, case_number, status, kind, dealer, vin, fault_code, description,
-		       opened_at, classified_at, closed_at, last_update, note_count, assignee_id
+		       opened_at, classified_at, closed_at, last_update, note_count, assignee_id,
+		       stage, stage_changed_at
 		FROM current_cases
 		WHERE 1=1`
 	if status != "" {
@@ -863,7 +900,8 @@ func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, as
 		var classifiedAt, closedAt *time.Time
 		var assignee *uuid.UUID
 		if err := rows.Scan(&c.ID, &c.Number, &c.Status, &kind, &c.Dealer, &c.VIN, &c.FaultCode, &c.Description,
-			&c.OpenedAt, &classifiedAt, &closedAt, &c.LastUpdate, &c.NoteCount, &assignee); err != nil {
+			&c.OpenedAt, &classifiedAt, &closedAt, &c.LastUpdate, &c.NoteCount, &assignee,
+			&c.Stage, &c.StageChangedAt); err != nil {
 			return nil, err
 		}
 		c.Kind = kind
@@ -882,11 +920,13 @@ func (h *handlers) queryOneCase(ctx context.Context, id uuid.UUID) (templates.Ca
 	var assignee *uuid.UUID
 	err := h.pool.QueryRow(ctx, `
 		SELECT id, case_number, status, kind, dealer, vin, fault_code, description,
-		       opened_at, classified_at, closed_at, last_update, note_count, assignee_id
+		       opened_at, classified_at, closed_at, last_update, note_count, assignee_id,
+		       stage, stage_changed_at
 		FROM current_cases
 		WHERE id = $1
 	`, id).Scan(&c.ID, &c.Number, &c.Status, &kind, &c.Dealer, &c.VIN, &c.FaultCode, &c.Description,
-		&c.OpenedAt, &classifiedAt, &closedAt, &c.LastUpdate, &c.NoteCount, &assignee)
+		&c.OpenedAt, &classifiedAt, &closedAt, &c.LastUpdate, &c.NoteCount, &assignee,
+		&c.Stage, &c.StageChangedAt)
 	if err != nil {
 		return c, err
 	}
@@ -1025,8 +1065,44 @@ func summarize(eventType string, payload []byte, nameByID map[uuid.UUID]string) 
 		return sb.String()
 	case fault.CaseClosed:
 		return fmt.Sprintf("Closed by %s — %s", nonEmpty(x.ClosedBy, "system"), x.Resolution)
+	case fault.StageChanged:
+		who := nameByID[x.ByUserID]
+		if who == "" {
+			who = x.ByUserID.String()[:8]
+		}
+		from := x.From
+		if from == "" {
+			from = "(initial)"
+		}
+		s := fmt.Sprintf("%s moved stage: %s → %s", who, stageLabel(from), stageLabel(x.To))
+		if x.Reason != "" {
+			s += " — " + x.Reason
+		}
+		return s
 	default:
 		return ""
+	}
+}
+
+// stageLabel converts a fault stage constant into a UI-friendly
+// label. Kept next to summarize for the timeline; the template has
+// a separate copy via templates.stageLabel for stepper rendering.
+func stageLabel(s string) string {
+	switch s {
+	case fault.StageNew:
+		return "New"
+	case fault.StageDiagnosis:
+		return "Diagnosis"
+	case fault.StagePartsOrdered:
+		return "Parts ordered"
+	case fault.StagePartsWaiting:
+		return "Awaiting parts"
+	case fault.StageRepair:
+		return "Repair"
+	case fault.StageResolved:
+		return "Resolved"
+	default:
+		return s
 	}
 }
 
