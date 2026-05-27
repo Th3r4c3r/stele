@@ -3,11 +3,53 @@ package templates
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 
 	"github.com/Th3r4c3r/stele/internal/fault"
 )
+
+// humanTimeAgo turns a timestamp into a coarse "5 min ago" string.
+// Used by the telemetry block + admin telemetry list. Thresholds are
+// chosen to be informative without overstating precision: a snapshot
+// 3h47m old says "3h ago", not "3 hours 47 minutes ago".
+func humanTimeAgo(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	d := time.Since(t)
+	switch {
+	case d < 0:
+		return t.UTC().Format("2006-01-02 15:04")
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%d min ago", int(d/time.Minute))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d h ago", int(d/time.Hour))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%d d ago", int(d/(24*time.Hour)))
+	default:
+		return t.UTC().Format("2006-01-02")
+	}
+}
+
+// humanTimeAgoPtr is humanTimeAgo for nullable timestamps.
+func humanTimeAgoPtr(t *time.Time) string {
+	if t == nil {
+		return "—"
+	}
+	return humanTimeAgo(*t)
+}
+
+// humanDatePtr renders a nullable timestamp as YYYY-MM-DD, or "—".
+func humanDatePtr(t *time.Time) string {
+	if t == nil {
+		return "—"
+	}
+	return t.UTC().Format("2006-01-02")
+}
 
 // kindLabel returns a UI-friendly label for a kind. Kept in plain Go
 // (not in a .templ) so it is callable from inside template expressions

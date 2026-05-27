@@ -29,6 +29,7 @@ import (
 	"github.com/Th3r4c3r/stele/internal/mail"
 	"github.com/Th3r4c3r/stele/internal/part"
 	"github.com/Th3r4c3r/stele/internal/search"
+	"github.com/Th3r4c3r/stele/internal/telemetry"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
 	"github.com/Th3r4c3r/stele/internal/vehicle"
 	"github.com/Th3r4c3r/stele/internal/web/static"
@@ -37,19 +38,21 @@ import (
 
 // Deps is the set of dependencies the web package needs.
 type Deps struct {
-	Pool       *pgxpool.Pool
-	Store      *event.PostgresStore
-	Resolver   *fault.PgResolver
-	Users      *userpkg.Repo
-	Dealers    *dealer.Repo
-	Vehicles   *vehicle.Repo
-	Parts      *part.Repo
-	Sessions   *auth.Sessions
-	Resets     *auth.ResetTokens
-	RateLimit  *auth.LoginRateLimit
-	MailSender mail.Sender
-	DocStore   *document.Storage
-	BaseURL    string
+	Pool          *pgxpool.Pool
+	Store         *event.PostgresStore
+	Resolver      *fault.PgResolver
+	Users         *userpkg.Repo
+	Dealers       *dealer.Repo
+	Vehicles      *vehicle.Repo
+	Parts         *part.Repo
+	Sessions      *auth.Sessions
+	Resets        *auth.ResetTokens
+	RateLimit     *auth.LoginRateLimit
+	MailSender    mail.Sender
+	DocStore      *document.Storage
+	Telemetry     *telemetry.Repo     // optional; nil disables /admin/telemetry
+	TelemetrySvc  *telemetry.Service  // optional; nil disables sync POSTs
+	BaseURL       string
 }
 
 // Mount registers all routes. The handler tree is built like an onion:
@@ -58,7 +61,7 @@ type Deps struct {
 // /admin subtree.
 func Mount(mux *http.ServeMux, d Deps) {
 	h := &handlers{pool: d.Pool, store: d.Store, resolver: d.Resolver, users: d.Users,
-		vehicles: d.Vehicles, parts: d.Parts,
+		vehicles: d.Vehicles, parts: d.Parts, telemetry: d.Telemetry,
 		searchSvc: search.New(d.Pool)}
 	ah := &authHandlers{
 		users:      d.Users,
@@ -152,6 +155,11 @@ func Mount(mux *http.ServeMux, d Deps) {
 	mux.Handle("GET /admin/recalls", wrapAdmin(adm.recallsList))
 	mux.Handle("GET /admin/recalls/{code}", wrapAdmin(adm.recallDetail))
 	mux.Handle("GET /admin/audit", wrapAdmin(adm.auditList))
+	if d.Telemetry != nil && d.TelemetrySvc != nil {
+		tele := &telemetryHandlers{repo: d.Telemetry, service: d.TelemetrySvc, users: d.Users}
+		mux.Handle("GET /admin/telemetry", wrapAdmin(tele.listPage))
+		mux.Handle("POST /admin/telemetry/sync", wrapAdmin(tele.sync))
+	}
 
 	staticFS, err := fs.Sub(static.FS, ".")
 	if err != nil {
@@ -167,6 +175,7 @@ type handlers struct {
 	users     *userpkg.Repo
 	vehicles  *vehicle.Repo
 	parts     *part.Repo
+	telemetry *telemetry.Repo // nil if STELE_NEWPLAT_TOKEN unset
 	searchSvc *search.Service
 }
 
@@ -451,9 +460,55 @@ func (h *handlers) showCase(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	// Telemetry block is optional: shown only when a snapshot exists
+	// for this VIN. Absent telemetry repo (token unconfigured) or
+	// missing snapshot both fall to nil → block renders nothing.
+	teleView := h.lookupTelemetry(r.Context(), row.VIN)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = templates.CaseDetailPage(navFor(r.Context(), h.users), row, timeline, userOpts, docs,
-		vehicleInfo, caseParts, partOptions).Render(r.Context(), w)
+		vehicleInfo, caseParts, partOptions, teleView).Render(r.Context(), w)
+}
+
+// lookupTelemetry returns a non-nil TelemetryView when a snapshot
+// exists for vin. Errors are swallowed: the block is best-effort
+// enrichment and must never break a case detail render.
+func (h *handlers) lookupTelemetry(ctx context.Context, vin string) *templates.TelemetryView {
+	if h.telemetry == nil || vin == "" {
+		return nil
+	}
+	s, err := h.telemetry.ByVIN(ctx, vin)
+	if err != nil {
+		return nil
+	}
+	v := &templates.TelemetryView{
+		VIN:            s.VIN,
+		SnapshotAt:     s.SnapshotAt,
+		IsOnline:       s.IsOnline,
+		SimEndTime:     s.SimEndTime,
+		LastOnlineAt:   s.LastOnlineAt,
+		SOCPct:         s.SOCPct,
+		EnduranceKm:    s.EnduranceKm,
+		TotalMileageKm: s.TotalMileageKm,
+		BMSTemperature: s.BMSTemperature,
+		GSMSignal:      s.GSMSignal,
+		GPSSatellites:  s.GPSSatellites,
+		Latitude:       s.Latitude,
+		Longitude:      s.Longitude,
+	}
+	if s.IMEI != nil {
+		v.IMEI = *s.IMEI
+	}
+	if s.ICCID != nil {
+		v.ICCID = *s.ICCID
+	}
+	if s.FotaVersion != nil {
+		v.FotaVersion = *s.FotaVersion
+	}
+	// SIM expiring soon = within 30 days. Drives the UI warning colour.
+	if s.SimEndTime != nil && time.Until(*s.SimEndTime) < 30*24*time.Hour {
+		v.SimExpiringSoon = true
+	}
+	return v
 }
 
 // lookupVehicle returns a non-nil VehicleInfo only when the VIN

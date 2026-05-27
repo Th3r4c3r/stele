@@ -1,0 +1,233 @@
+package templates
+
+import (
+	"fmt"
+	"time"
+)
+
+// TelemetryRow is the /admin/telemetry list row view.
+type TelemetryRow struct {
+	VIN            string
+	SnapshotAt     time.Time
+	IsOnline       bool
+	IMEI           string
+	ICCID          string
+	SimEndTime     *time.Time
+	LastOnlineAt   *time.Time
+	SOCPct         *int
+	EnduranceKm    *int
+	TotalMileageKm *float64
+	FotaVersion    string
+}
+
+// TelemetryView is the case-detail inline block. Same shape as
+// TelemetryRow plus a couple of presentation flags computed in the
+// handler (e.g., SimExpiringSoon to colour the SIM cell).
+type TelemetryView struct {
+	VIN              string
+	SnapshotAt       time.Time
+	IsOnline         bool
+	IMEI             string
+	ICCID            string
+	SimEndTime       *time.Time
+	SimExpiringSoon  bool
+	LastOnlineAt     *time.Time
+	SOCPct           *int
+	EnduranceKm      *int
+	TotalMileageKm   *float64
+	BMSTemperature   *int
+	GSMSignal        *int
+	GPSSatellites    *int
+	FotaVersion      string
+	Latitude         *float64
+	Longitude        *float64
+}
+
+// AdminTelemetryPage is the /admin/telemetry list.
+templ AdminTelemetryPage(nav NavUser, rows []TelemetryRow, openCaseVINCount, limit int) {
+	@AdminShell("Admin · telemetry", nav) {
+		<section class="page-head">
+			<h1>Fleet telemetry</h1>
+			<a href="/admin" class="btn">Back</a>
+		</section>
+		<p class="muted">
+			Snapshot of newplat live telemetry per VIN. One row per VIN, upserted on each sync.
+			<a href="/admin">See the audit log</a> for the trail of who synced what.
+		</p>
+
+		<section class="telemetry-actions">
+			<form method="POST" action="/admin/telemetry/sync" class="inline">
+				<input type="hidden" name="mode" value="case-vins"/>
+				<button type="submit" class="btn primary">
+					Sync open-case VINs ({ fmt.Sprint(openCaseVINCount) })
+				</button>
+			</form>
+			<form method="POST" action="/admin/telemetry/sync" class="inline">
+				<label>VIN:
+					<input type="text" name="vin" minlength="17" maxlength="17" pattern="[A-Z0-9]{17}" placeholder="LYS..." required/>
+				</label>
+				<button type="submit" class="btn">Sync this VIN</button>
+			</form>
+		</section>
+
+		<h2>Recent snapshots (last { fmt.Sprint(limit) })</h2>
+		if len(rows) == 0 {
+			<p class="muted">No snapshots yet. Run a sync to populate.</p>
+		} else {
+			<table class="claims compact">
+				<thead>
+					<tr>
+						<th>VIN</th>
+						<th>Online</th>
+						<th>SOC</th>
+						<th>Range</th>
+						<th>Last seen</th>
+						<th>SIM ends</th>
+						<th>Mileage</th>
+						<th>Synced</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, r := range rows {
+						<tr>
+							<td><code>{ r.VIN }</code></td>
+							<td>
+								if r.IsOnline {
+									<span class="dot dot-online" title="online">●</span> online
+								} else {
+									<span class="dot dot-offline" title="offline">●</span> <span class="muted">offline</span>
+								}
+							</td>
+							<td>
+								if r.SOCPct != nil {
+									<strong>{ fmt.Sprint(*r.SOCPct) }%</strong>
+								} else {
+									<span class="muted">—</span>
+								}
+							</td>
+							<td>
+								if r.EnduranceKm != nil {
+									{ fmt.Sprint(*r.EnduranceKm) } km
+								} else {
+									<span class="muted">—</span>
+								}
+							</td>
+							<td>{ humanTimeAgoPtr(r.LastOnlineAt) }</td>
+							<td>{ humanDatePtr(r.SimEndTime) }</td>
+							<td>
+								if r.TotalMileageKm != nil {
+									{ fmt.Sprintf("%.1f", *r.TotalMileageKm) } km
+								} else {
+									<span class="muted">—</span>
+								}
+							</td>
+							<td><small class="muted">{ humanTimeAgo(r.SnapshotAt) }</small></td>
+							<td>
+								<form method="POST" action="/admin/telemetry/sync" class="inline">
+									<input type="hidden" name="vin" value={ r.VIN }/>
+									<input type="hidden" name="return" value="/admin/telemetry"/>
+									<button type="submit" class="link-button">Refresh</button>
+								</form>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
+}
+
+// TelemetryBlock is the per-VIN inline block embedded in case detail.
+templ TelemetryBlock(t *TelemetryView) {
+	if t != nil {
+		<section class="telemetry-block">
+			<h3>Telemetry <small class="muted">snapshot { humanTimeAgo(t.SnapshotAt) }</small></h3>
+			<div class="telemetry-grid">
+				<div class="tg-cell">
+					<div class="tg-label">Status</div>
+					<div class="tg-value">
+						if t.IsOnline {
+							<span class="dot dot-online">●</span> <strong>online</strong>
+						} else {
+							<span class="dot dot-offline">●</span> <span class="muted">offline</span>
+						}
+					</div>
+				</div>
+				<div class="tg-cell">
+					<div class="tg-label">SOC</div>
+					<div class="tg-value">
+						if t.SOCPct != nil {
+							<strong>{ fmt.Sprint(*t.SOCPct) }%</strong>
+						} else {
+							<span class="muted">—</span>
+						}
+					</div>
+				</div>
+				<div class="tg-cell">
+					<div class="tg-label">Range</div>
+					<div class="tg-value">
+						if t.EnduranceKm != nil {
+							{ fmt.Sprint(*t.EnduranceKm) } km
+						} else {
+							<span class="muted">—</span>
+						}
+					</div>
+				</div>
+				<div class="tg-cell">
+					<div class="tg-label">Last seen</div>
+					<div class="tg-value">{ humanTimeAgoPtr(t.LastOnlineAt) }</div>
+				</div>
+				<div class="tg-cell">
+					<div class="tg-label">SIM ends</div>
+					<div class="tg-value">
+						if t.SimExpiringSoon {
+							<span class="warning">{ humanDatePtr(t.SimEndTime) }</span>
+						} else {
+							{ humanDatePtr(t.SimEndTime) }
+						}
+					</div>
+				</div>
+				<div class="tg-cell">
+					<div class="tg-label">Mileage</div>
+					<div class="tg-value">
+						if t.TotalMileageKm != nil {
+							{ fmt.Sprintf("%.1f", *t.TotalMileageKm) } km
+						} else {
+							<span class="muted">—</span>
+						}
+					</div>
+				</div>
+				if t.BMSTemperature != nil {
+					<div class="tg-cell">
+						<div class="tg-label">BMS temp</div>
+						<div class="tg-value">{ fmt.Sprint(*t.BMSTemperature) } °C</div>
+					</div>
+				}
+				if t.FotaVersion != "" {
+					<div class="tg-cell">
+						<div class="tg-label">Firmware</div>
+						<div class="tg-value"><code>{ t.FotaVersion }</code></div>
+					</div>
+				}
+				if t.IMEI != "" {
+					<div class="tg-cell">
+						<div class="tg-label">IMEI</div>
+						<div class="tg-value"><small><code>{ t.IMEI }</code></small></div>
+					</div>
+				}
+				if t.ICCID != "" {
+					<div class="tg-cell">
+						<div class="tg-label">ICCID</div>
+						<div class="tg-value"><small><code>{ t.ICCID }</code></small></div>
+					</div>
+				}
+			</div>
+			<form method="POST" action="/admin/telemetry/sync" class="inline">
+				<input type="hidden" name="vin" value={ t.VIN }/>
+				<input type="hidden" name="return" value={ "/cases" }/>
+				<button type="submit" class="link-button">Refresh now</button>
+			</form>
+		</section>
+	}
+}

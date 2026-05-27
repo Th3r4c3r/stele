@@ -23,8 +23,10 @@ import (
 	"github.com/Th3r4c3r/stele/internal/fault"
 	"github.com/Th3r4c3r/stele/internal/mail"
 	"github.com/Th3r4c3r/stele/internal/migrate"
+	"github.com/Th3r4c3r/stele/internal/newplat"
 	"github.com/Th3r4c3r/stele/internal/part"
 	"github.com/Th3r4c3r/stele/internal/projection"
+	"github.com/Th3r4c3r/stele/internal/telemetry"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
 	"github.com/Th3r4c3r/stele/internal/vehicle"
 	"github.com/Th3r4c3r/stele/internal/web"
@@ -134,21 +136,35 @@ func runServer() int {
 	mailer := mail.FromEnv()
 	baseURL := envOr("STELE_BASE_URL", "https://stele.178-105-44-164.nip.io")
 
+	// Telemetry (newplat) is optional: when STELE_NEWPLAT_TOKEN is
+	// unset the package is not wired and the /admin/telemetry routes
+	// are not registered. Rest of the app keeps working unchanged.
+	telemetryRepo := telemetry.NewRepo(pool)
+	var telemetrySvc *telemetry.Service
+	if tok := os.Getenv("STELE_NEWPLAT_TOKEN"); tok != "" {
+		telemetrySvc = telemetry.NewService(newplat.New(tok), telemetryRepo)
+		slog.Info("telemetry: newplat client configured")
+	} else {
+		slog.Info("telemetry: STELE_NEWPLAT_TOKEN empty, /admin/telemetry disabled")
+	}
+
 	mux := http.NewServeMux()
 	web.Mount(mux, web.Deps{
-		Pool:       pool,
-		Store:      store,
-		Resolver:   resolver,
-		Users:      userRepo,
-		Dealers:    dealerRepo,
-		Vehicles:   vehicleRepo,
-		Parts:      partRepo,
-		Sessions:   sessions,
-		Resets:     resets,
-		RateLimit:  rateLimit,
-		MailSender: mailer,
-		DocStore:   docStorage,
-		BaseURL:    baseURL,
+		Pool:         pool,
+		Store:        store,
+		Resolver:     resolver,
+		Users:        userRepo,
+		Dealers:      dealerRepo,
+		Vehicles:     vehicleRepo,
+		Parts:        partRepo,
+		Sessions:     sessions,
+		Resets:       resets,
+		RateLimit:    rateLimit,
+		MailSender:   mailer,
+		DocStore:     docStorage,
+		Telemetry:    telemetryRepo,
+		TelemetrySvc: telemetrySvc,
+		BaseURL:      baseURL,
 	})
 	// Operational endpoint (public, no auth). Debug endpoints removed
 	// in M7 — the dashboard + replay command cover their use cases.
