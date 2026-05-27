@@ -40,9 +40,16 @@ services:
       # Documents storage (ADR-010). The host bind-mount is below.
       STELE_DOCS_DIR: /data/documents
       STELE_DOCS_MAX_BYTES: ${STELE_DOCS_MAX_BYTES:-26214400}
-      # newplat JWT for telemetry sync (ADR-014). Empty disables
-      # /admin/telemetry endpoints; the rest of the app keeps working.
+      # newplat for telemetry sync (ADR-014).
+      # Modes:
+      #   1. account + password set => auto-refresh client (recommended).
+      #   2. only token set => static, manual rotation.
+      #   3. nothing set => /admin/telemetry disabled.
       STELE_NEWPLAT_TOKEN: ${STELE_NEWPLAT_TOKEN:-}
+      STELE_NEWPLAT_ACCOUNT: ${STELE_NEWPLAT_ACCOUNT:-}
+      STELE_NEWPLAT_PASSWORD: ${STELE_NEWPLAT_PASSWORD:-}
+      STELE_NEWPLAT_CUSTOMER: ${STELE_NEWPLAT_CUSTOMER:-VMOTO}
+      STELE_NEWPLAT_CUSTOMER_ID: ${STELE_NEWPLAT_CUSTOMER_ID:-1}
     volumes:
       - /home/yan/data/documents:/data/documents
     depends_on:

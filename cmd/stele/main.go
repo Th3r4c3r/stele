@@ -136,16 +136,33 @@ func runServer() int {
 	mailer := mail.FromEnv()
 	baseURL := envOr("STELE_BASE_URL", "https://stele.178-105-44-164.nip.io")
 
-	// Telemetry (newplat) is optional: when STELE_NEWPLAT_TOKEN is
-	// unset the package is not wired and the /admin/telemetry routes
-	// are not registered. Rest of the app keeps working unchanged.
+	// Telemetry (newplat) is optional. Three configuration modes:
+	//   1. STELE_NEWPLAT_ACCOUNT + _PASSWORD set: auto-refresh client,
+	//      Logs in at first use, re-logs on 401. STELE_NEWPLAT_TOKEN
+	//      may be empty or pre-seeded to skip the first round-trip.
+	//   2. Only STELE_NEWPLAT_TOKEN set: static token, no refresh.
+	//      Manual rotation when it expires.
+	//   3. Neither: telemetry routes disabled; rest of app unchanged.
 	telemetryRepo := telemetry.NewRepo(pool)
 	var telemetrySvc *telemetry.Service
-	if tok := os.Getenv("STELE_NEWPLAT_TOKEN"); tok != "" {
-		telemetrySvc = telemetry.NewService(newplat.New(tok), telemetryRepo)
-		slog.Info("telemetry: newplat client configured")
-	} else {
-		slog.Info("telemetry: STELE_NEWPLAT_TOKEN empty, /admin/telemetry disabled")
+	switch {
+	case os.Getenv("STELE_NEWPLAT_ACCOUNT") != "" && os.Getenv("STELE_NEWPLAT_PASSWORD") != "":
+		client := newplat.NewWithCredentials(
+			os.Getenv("STELE_NEWPLAT_TOKEN"),
+			newplat.Credentials{
+				CustomerName: envOr("STELE_NEWPLAT_CUSTOMER", "VMOTO"),
+				CustomerID:   envOr("STELE_NEWPLAT_CUSTOMER_ID", "1"),
+				UserAccount:  os.Getenv("STELE_NEWPLAT_ACCOUNT"),
+				UserPassword: os.Getenv("STELE_NEWPLAT_PASSWORD"),
+			})
+		telemetrySvc = telemetry.NewService(client, telemetryRepo)
+		slog.Info("telemetry: newplat client with auto-refresh configured",
+			"account", os.Getenv("STELE_NEWPLAT_ACCOUNT"))
+	case os.Getenv("STELE_NEWPLAT_TOKEN") != "":
+		telemetrySvc = telemetry.NewService(newplat.New(os.Getenv("STELE_NEWPLAT_TOKEN")), telemetryRepo)
+		slog.Info("telemetry: newplat client with static token configured (no auto-refresh)")
+	default:
+		slog.Info("telemetry: no newplat credentials, /admin/telemetry disabled")
 	}
 
 	mux := http.NewServeMux()
