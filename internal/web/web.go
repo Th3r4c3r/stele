@@ -887,7 +887,22 @@ func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, as
 		args = append(args, assigneeFilter)
 		q += fmt.Sprintf(" AND assignee_id = $%d", len(args))
 	}
-	q += ` ORDER BY opened_at DESC`
+	// Order by repair stage (canonical workflow order), most-recent
+	// first inside each stage. Operators scan from top to bottom and
+	// expect "new" at the top, "resolved" at the bottom — same as
+	// the stepper read pattern. The CASE expression avoids needing
+	// an enum in Postgres.
+	q += `
+		ORDER BY CASE stage
+		    WHEN 'new'           THEN 1
+		    WHEN 'diagnosis'     THEN 2
+		    WHEN 'parts_ordered' THEN 3
+		    WHEN 'parts_waiting' THEN 4
+		    WHEN 'repair'        THEN 5
+		    WHEN 'resolved'      THEN 6
+		    ELSE                       9
+		END,
+		opened_at DESC`
 	rows, err := h.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("queryCases: %w", err)

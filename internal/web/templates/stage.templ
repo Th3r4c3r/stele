@@ -101,6 +101,29 @@ func nextStages(currentStage string) []stageStep {
 	return out
 }
 
+// stageBadge renders a coloured chip with the stage label. Used by
+// the cases list and search results so the visual style is uniform
+// with the stepper at the top of the case detail. Class names map
+// 1:1 to the .badge-stage-* CSS rules.
+templ stageBadge(stage string) {
+	switch stage {
+		case "new":
+			<span class="badge badge-stage-new">New</span>
+		case "diagnosis":
+			<span class="badge badge-stage-diagnosis">Diagnosis</span>
+		case "parts_ordered":
+			<span class="badge badge-stage-parts-ordered">Parts ordered</span>
+		case "parts_waiting":
+			<span class="badge badge-stage-parts-waiting">Awaiting parts</span>
+		case "repair":
+			<span class="badge badge-stage-repair">Repair</span>
+		case "resolved":
+			<span class="badge badge-stage-resolved">Resolved</span>
+		default:
+			<span class="badge">{ stage }</span>
+	}
+}
+
 // StageStepper renders the horizontal lifecycle bar at the top of
 // case detail. Closed cases are read-only: stepper still rendered
 // (so history is visible) but no transition form below.

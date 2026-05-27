@@ -265,7 +265,7 @@ templ casesTable(rows []CaseRow, withKind bool, withAssignee bool) {
 				if withAssignee {
 					<th>Assignee</th>
 				}
-				<th>Notes</th>
+				<th>Stage</th>
 			</tr>
 		</thead>
 		<tbody>
@@ -294,7 +294,7 @@ templ casesTable(rows []CaseRow, withKind bool, withAssignee bool) {
 							}
 						</td>
 					}
-					<td>{ fmt.Sprint(c.NoteCount) }</td>
+					<td>@stageBadge(c.Stage)</td>
 				</tr>
 			}
 		</tbody>
