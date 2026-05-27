@@ -113,6 +113,7 @@ templ AuthShell(title string) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title } — Stele</title>
 			<link rel="stylesheet" href="/static/stele.css"/>
+			<script>(function(){try{var t=localStorage.getItem("stele-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 		</head>
 		<body class="auth-body">
 			<main class="auth-main">

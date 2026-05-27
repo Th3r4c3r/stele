@@ -1,13 +1,19 @@
-/* Stele minimal styles. No framework. < 200 lines. */
+/* Stele styles. Single file. CSS variables for theming. */
 
 :root {
+	color-scheme: light dark;
+
+	/* Light theme (default). */
 	--fg: #1c1c1c;
 	--fg-muted: #6c6c6c;
 	--bg: #fafafa;
 	--bg-elev: #ffffff;
+	--bg-elev-strong: #ffffff;
 	--border: #e3e3e3;
+	--border-strong: #c8c8c8;
 	--accent: #335577;
 	--accent-fg: #ffffff;
+	--accent-soft: #eef2f7;
 	--danger: #a83232;
 	--badge-open-bg: #fff4cc;
 	--badge-open-fg: #6b5300;
@@ -15,6 +21,55 @@
 	--badge-closed-fg: #2b5d22;
 	--error-bg: #fce4e4;
 	--error-fg: #8a1f1f;
+	--code-bg: rgba(0, 0, 0, 0.04);
+	--shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="dark"] {
+	color-scheme: dark;
+	--fg: #e6e6e6;
+	--fg-muted: #9a9a9a;
+	--bg: #15181c;
+	--bg-elev: #1d2126;
+	--bg-elev-strong: #232830;
+	--border: #2a2f37;
+	--border-strong: #3a4049;
+	--accent: #7aa3d1;
+	--accent-fg: #0b1015;
+	--accent-soft: #1b2a3a;
+	--danger: #e07070;
+	--badge-open-bg: #3a3220;
+	--badge-open-fg: #f0d27b;
+	--badge-closed-bg: #1f3a1f;
+	--badge-closed-fg: #9cd99c;
+	--error-bg: #3a1f1f;
+	--error-fg: #f0a0a0;
+	--code-bg: rgba(255, 255, 255, 0.06);
+	--shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+		--fg: #e6e6e6;
+		--fg-muted: #9a9a9a;
+		--bg: #15181c;
+		--bg-elev: #1d2126;
+		--bg-elev-strong: #232830;
+		--border: #2a2f37;
+		--border-strong: #3a4049;
+		--accent: #7aa3d1;
+		--accent-fg: #0b1015;
+		--accent-soft: #1b2a3a;
+		--danger: #e07070;
+		--badge-open-bg: #3a3220;
+		--badge-open-fg: #f0d27b;
+		--badge-closed-bg: #1f3a1f;
+		--badge-closed-fg: #9cd99c;
+		--error-bg: #3a1f1f;
+		--error-fg: #f0a0a0;
+		--code-bg: rgba(255, 255, 255, 0.06);
+		--shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+	}
 }
 
 * { box-sizing: border-box; }
@@ -24,13 +79,59 @@ html, body {
 	padding: 0;
 	background: var(--bg);
 	color: var(--fg);
-	font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 main {
-	max-width: 920px;
+	max-width: 1200px;
 	margin: 0 auto;
-	padding: 24px 20px 60px;
+	padding: 20px 24px 60px;
+}
+/* Case-detail / forms read better at a narrower measure; opt in via
+   a body class set by the layout when the page is detail-style. */
+body.narrow main { max-width: 920px; }
+
+h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
+h2 { font-size: 16px; font-weight: 600; letter-spacing: 0; margin: 24px 0 10px; }
+h3 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
+
+code {
+	font: 12px/1.4 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+	background: var(--code-bg);
+	padding: 1px 5px;
+	border-radius: 3px;
+}
+.small { font-size: 12px; }
+.muted { color: var(--fg-muted); }
+
+/* Tables: tighter rows, uppercase header tracking, hover row. */
+table.claims {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+table.claims th {
+	text-align: left;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: var(--fg-muted);
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--border);
+	background: var(--bg-elev);
+}
+table.claims td {
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--border);
+	vertical-align: top;
+}
+table.claims tbody tr:hover { background: var(--accent-soft); }
+table.claims.compact th, table.claims.compact td {
+	padding: 6px 10px;
+	font-size: 12px;
 }
 
 .topbar {
@@ -59,7 +160,7 @@ main {
 	padding: 4px 10px;
 	border-radius: 4px;
 }
-.topbar nav.primary a:hover { color: var(--fg); background: #f0f0f0; }
+.topbar nav.primary a:hover { color: var(--fg); background: var(--accent-soft); }
 
 .search-bar {
 	display: flex;
@@ -70,11 +171,11 @@ main {
 .search-bar input {
 	width: 100%;
 	font: inherit;
-	font-size: 14px;
+	font-size: 13px;
 	padding: 6px 10px;
 	border: 1px solid var(--border);
 	border-radius: 4px;
-	background: #fff;
+	background: var(--bg);
 	color: var(--fg);
 }
 .search-bar input:focus {
@@ -82,7 +183,7 @@ main {
 	outline-offset: -1px;
 }
 
-mark { background: #fff3a8; padding: 0 2px; border-radius: 2px; }
+mark { background: var(--badge-open-bg); color: var(--badge-open-fg); padding: 0 2px; border-radius: 2px; }
 
 .kpi-grid {
 	display: grid;
@@ -119,7 +220,7 @@ table.compact th, table.compact td { padding: 6px 10px; font-size: 14px; }
 	padding: 4px 8px;
 	border-radius: 4px;
 }
-.user-menu .user-link:hover { background: #f0f0f0; }
+.user-menu .user-link:hover { background: var(--accent-soft); }
 .user-menu .inline-logout { margin: 0; padding: 0; background: none; border: 0; }
 .link-button {
 	background: none;
@@ -131,7 +232,7 @@ table.compact th, table.compact td { padding: 6px 10px; font-size: 14px; }
 	font-size: 14px;
 	border-radius: 4px;
 }
-.link-button:hover { color: var(--fg); background: #f0f0f0; }
+.link-button:hover { color: var(--fg); background: var(--accent-soft); }
 .link-button.danger { color: var(--danger); }
 .link-button.danger:hover { background: var(--error-bg); }
 .inline-confirm { display: inline; margin: 0; padding: 0; background: none; border: 0; }
@@ -142,9 +243,6 @@ table.compact th, table.compact td { padding: 6px 10px; font-size: 14px; }
 	padding: 20px;
 }
 
-h1 { font-size: 24px; margin: 0; }
-h2 { font-size: 18px; margin: 32px 0 12px; }
-
 .page-head {
 	display: flex;
 	align-items: baseline;
@@ -153,34 +251,21 @@ h2 { font-size: 18px; margin: 32px 0 12px; }
 	margin-bottom: 8px;
 }
 
-.muted { color: var(--fg-muted); }
-
 a { color: var(--accent); }
+a:hover { text-decoration: underline; }
 
+/* Tables get rounded card chrome (border + shadow) layered on top
+   of the typography baseline defined above. */
 table.claims {
-	width: 100%;
-	border-collapse: collapse;
 	background: var(--bg-elev);
 	border: 1px solid var(--border);
 	border-radius: 6px;
 	overflow: hidden;
-}
-table.claims th, table.claims td {
-	padding: 10px 12px;
-	border-bottom: 1px solid var(--border);
-	text-align: left;
-	vertical-align: top;
-}
-table.claims th {
-	background: #f0f0f0;
-	font-weight: 600;
-	font-size: 13px;
-	color: var(--fg-muted);
+	box-shadow: var(--shadow);
 }
 table.claims tbody tr:last-child td { border-bottom: 0; }
 table.claims tbody tr { transition: background 0.1s ease; }
-table.claims tbody tr:hover { background: #f7f9fb; }
-code { font: 13px/1.4 "SFMono-Regular", Consolas, monospace; background: #f2f2f2; padding: 1px 5px; border-radius: 3px; }
+table.claims thead th { position: sticky; top: 0; z-index: 1; }
 
 .btn {
 	display: inline-block;
@@ -190,12 +275,12 @@ code { font: 13px/1.4 "SFMono-Regular", Consolas, monospace; background: #f2f2f2
 	color: var(--fg);
 	border: 1px solid var(--border);
 	text-decoration: none;
-	font-size: 14px;
+	font-size: 13px;
 	cursor: pointer;
 }
-.btn:hover { background: #f2f2f2; }
+.btn:hover { background: var(--accent-soft); border-color: var(--border-strong); }
 .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
-.btn.primary:hover { background: #28466a; }
+.btn.primary:hover { background: var(--accent); filter: brightness(1.1); }
 .btn.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn.danger:hover { background: #8b2929; }
 
@@ -689,3 +774,80 @@ ol.timeline p { margin: 4px 0 0; font-size: 14px; }
 .badge-stage-parts-waiting  { background: #fed7aa; color: #9a3412; }   /* darker amber, signals "stuck waiting" */
 .badge-stage-repair         { background: #cffafe; color: #155e75; }   /* cyan */
 .badge-stage-resolved       { background: #dcfce7; color: #166534; }   /* green */
+
+/* === Dark-mode badge/chip overrides ============================== */
+[data-theme="dark"] .badge.status-triage     { background: #4a3320; color: #f0d27b; }
+[data-theme="dark"] .badge.status-classified { background: #1f3257; color: #a7c1ef; }
+[data-theme="dark"] .badge.status-closed     { background: #1f3a1f; color: #9cd99c; }
+[data-theme="dark"] .badge.kind-warranty     { background: #18374f; color: #9cc6ef; }
+[data-theme="dark"] .badge.kind-oow          { background: #4a1e1e; color: #f0a0a0; }
+[data-theme="dark"] .badge.kind-goodwill     { background: #3a2348; color: #d8b3f0; }
+[data-theme="dark"] .badge.kind-recall       { background: #4a3120; color: #f0c490; }
+[data-theme="dark"] .badge.kind-unrelated    { background: #2a2a2a; color: #c0c0c0; }
+[data-theme="dark"] .badge.kind-edu          { background: #1f3a26; color: #b5d99c; }
+
+[data-theme="dark"] .badge-stage-new            { background: #18374f; color: #9cc6ef; }
+[data-theme="dark"] .badge-stage-diagnosis      { background: #2c2244; color: #cbb7f0; }
+[data-theme="dark"] .badge-stage-parts-ordered  { background: #3f3018; color: #f0c878; }
+[data-theme="dark"] .badge-stage-parts-waiting  { background: #4a2818; color: #f0a878; }
+[data-theme="dark"] .badge-stage-repair         { background: #1a3537; color: #9cd9e0; }
+[data-theme="dark"] .badge-stage-resolved       { background: #1f3a1f; color: #9cd99c; }
+
+[data-theme="dark"] .chip,
+[data-theme="dark"] details summary,
+[data-theme="dark"] .actions-details summary { background: var(--bg-elev-strong); }
+[data-theme="dark"] .chip:hover               { background: var(--accent-soft); }
+
+[data-theme="dark"] .telemetry-block .tg-value code,
+[data-theme="dark"] .telemetry-block .tg-value code.small { background: rgba(255,255,255,0.06); }
+[data-theme="dark"] .stage-stepper .step-dot         { background: var(--bg-elev-strong); border-color: var(--border-strong); }
+[data-theme="dark"] .stage-stepper .step-todo .step-dot { background: var(--bg-elev-strong); }
+
+[data-theme="dark"] .part-preview { background: #182234; border-color: #2a3852; }
+[data-theme="dark"] .part-preview .pp-price { color: #9cd9a0; }
+[data-theme="dark"] .part-preview .pp-notes { color: var(--fg-muted); }
+
+[data-theme="dark"] .recall-badge { background: #4a3320; color: #f0c878; border-color: #6a4c2c; }
+
+/* === Loading indicator for HTMX in-flight ======================== */
+.htmx-indicator { opacity: 0; transition: opacity 200ms ease-in 200ms; }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { opacity: 1; }
+/* Buttons fade during their own request for instant visual feedback. */
+button.htmx-request, .btn.htmx-request {
+	opacity: 0.65;
+	pointer-events: none;
+	cursor: progress;
+}
+/* Tiny inline spinner: an inline-block ::after with a CSS animation. */
+button.htmx-request::after, .btn.htmx-request::after {
+	content: "";
+	display: inline-block;
+	margin-left: 8px;
+	width: 10px; height: 10px;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	border-radius: 50%;
+	vertical-align: -1px;
+	animation: stele-spin 600ms linear infinite;
+}
+@keyframes stele-spin { to { transform: rotate(360deg); } }
+
+/* === Theme toggle button (topbar) ================================ */
+.theme-toggle {
+	margin: 0; padding: 4px 8px;
+	background: none; border: 1px solid var(--border);
+	border-radius: 4px;
+	color: var(--fg-muted);
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+}
+.theme-toggle:hover { color: var(--fg); border-color: var(--border-strong); background: var(--accent-soft); }
+
+/* === Keyboard navigation =========================================
+   Row picked by j/k gets a left-bar accent + soft background. */
+table.claims tbody tr.kbd-selected {
+	background: var(--accent-soft) !important;
+	box-shadow: inset 3px 0 0 0 var(--accent);
+}

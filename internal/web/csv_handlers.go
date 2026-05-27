@@ -28,6 +28,10 @@ func (h *handlers) exportCasesCSV(w http.ResponseWriter, r *http.Request) {
 	if kindFilter != "" && !fault.IsKnownKind(kindFilter) {
 		kindFilter = ""
 	}
+	stageFilter := r.URL.Query().Get("stage")
+	if stageFilter != "" && !fault.IsKnownStage(stageFilter) {
+		stageFilter = ""
+	}
 	assigneeParam := r.URL.Query().Get("assignee")
 	var assigneeFilter uuid.UUID
 	if tab != "mine" {
@@ -50,14 +54,14 @@ func (h *handlers) exportCasesCSV(w http.ResponseWriter, r *http.Request) {
 	)
 	if tab == "mine" {
 		currentID, _ := userpkg.FromCtx(r.Context())
-		rows, err = h.queryCasesForCSV(r.Context(), "", "", currentID)
+		rows, err = h.queryCasesForCSV(r.Context(), "", "", currentID, stageFilter)
 	} else {
 		var status string
 		switch tab {
 		case "triage", "classified", "closed":
 			status = tab
 		}
-		rows, err = h.queryCasesForCSV(r.Context(), status, kindFilter, assigneeFilter)
+		rows, err = h.queryCasesForCSV(r.Context(), status, kindFilter, assigneeFilter, stageFilter)
 	}
 	if err != nil {
 		httpErr(w, err)
@@ -113,7 +117,7 @@ type rowForCSV struct {
 	NoteCount    int
 }
 
-func (h *handlers) queryCasesForCSV(ctx contextLike, status, kindFilter string, assigneeFilter uuid.UUID) ([]rowForCSV, error) {
+func (h *handlers) queryCasesForCSV(ctx contextLike, status, kindFilter string, assigneeFilter uuid.UUID, stageFilter string) ([]rowForCSV, error) {
 	args := []any{}
 	q := `
 		SELECT c.case_number, c.status, c.kind, c.opened_at, c.classified_at,
@@ -133,6 +137,10 @@ func (h *handlers) queryCasesForCSV(ctx contextLike, status, kindFilter string, 
 	if assigneeFilter != uuid.Nil {
 		args = append(args, assigneeFilter)
 		q += fmt.Sprintf(" AND c.assignee_id = $%d", len(args))
+	}
+	if stageFilter != "" {
+		args = append(args, stageFilter)
+		q += fmt.Sprintf(" AND c.stage = $%d", len(args))
 	}
 	q += ` ORDER BY c.opened_at DESC`
 	rows, err := h.pool.Query(asStdCtx(ctx), q, args...)

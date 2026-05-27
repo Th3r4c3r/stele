@@ -52,7 +52,7 @@ func Layout(title string, nav NavUser) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(" — Stele</title><link rel=\"stylesheet\" href=\"/static/stele.css\"><script src=\"/static/htmx.min.js\" defer></script></head><body><header class=\"topbar\"><a class=\"brand\" href=\"/\">Stele</a><nav class=\"primary\"><a href=\"/dashboard\">Dashboard</a> <a href=\"/cases\">Cases</a> <a href=\"/analytics\">Analytics</a> ")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(" — Stele</title><link rel=\"stylesheet\" href=\"/static/stele.css\"><script src=\"/static/htmx.min.js\" defer></script><!-- Theme: apply stored preference before paint to avoid FOUC. --><script>\n\t\t\t\t(function() {\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar t = localStorage.getItem(\"stele-theme\");\n\t\t\t\t\t\tif (t === \"dark\" || t === \"light\") {\n\t\t\t\t\t\t\tdocument.documentElement.setAttribute(\"data-theme\", t);\n\t\t\t\t\t\t}\n\t\t\t\t\t} catch (e) {}\n\t\t\t\t})();\n\t\t\t</script><script src=\"/static/stele.js\" defer></script></head><body><header class=\"topbar\"><a class=\"brand\" href=\"/\">Stele</a><nav class=\"primary\"><a href=\"/dashboard\">Dashboard</a> <a href=\"/cases\">Cases</a> <a href=\"/analytics\">Analytics</a> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -62,14 +62,14 @@ func Layout(title string, nav NavUser) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</nav><form method=\"GET\" action=\"/search\" class=\"search-bar\"><input type=\"search\" name=\"q\" placeholder=\"Search C-1234, VIN, dealer, fault, notes…\" autocomplete=\"off\" minlength=\"2\" maxlength=\"200\"></form><div class=\"user-menu\"><a class=\"user-link\" href=\"/account\" title=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</nav><form method=\"GET\" action=\"/search\" class=\"search-bar\"><input type=\"search\" name=\"q\" placeholder=\"Search C-1234, VIN, dealer, fault, notes…\" autocomplete=\"off\" minlength=\"2\" maxlength=\"200\"></form><div class=\"user-menu\"><button type=\"button\" class=\"theme-toggle\" data-theme-toggle title=\"Toggle light/dark theme\">◐</button> <a class=\"user-link\" href=\"/account\" title=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(nav.Email)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/templates/layout.templ`, Line: 43, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/templates/layout.templ`, Line: 56, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -82,7 +82,7 @@ func Layout(title string, nav NavUser) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(nav.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/templates/layout.templ`, Line: 43, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/templates/layout.templ`, Line: 56, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {

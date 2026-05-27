@@ -127,10 +127,11 @@ templ CasesListPage(
 	activeTab string,
 	kindFilter string,
 	assigneeFilter string,
+	stageFilter string,
 	users []UserOption,
 ) {
 	@Layout("Cases", nav) {
-		@CasesListBody(triage, classified, closed, mine, activeTab, kindFilter, assigneeFilter, users, nav.Name)
+		@CasesListBody(triage, classified, closed, mine, activeTab, kindFilter, assigneeFilter, stageFilter, users, nav.Name)
 	}
 }
 
@@ -142,13 +143,14 @@ templ CasesListBody(
 	activeTab string,
 	kindFilter string,
 	assigneeFilter string,
+	stageFilter string,
 	users []UserOption,
 	currentUserName string,
 ) {
 	<section class="page-head">
 		<h1>Fault cases</h1>
 		<div class="page-head-actions">
-			<a class="btn" href={ templ.URL(casesCSVHref(activeTab, kindFilter, assigneeFilter)) }>Export CSV</a>
+			<a class="btn" href={ templ.URL(casesCSVHref(activeTab, kindFilter, assigneeFilter, stageFilter)) }>Export CSV</a>
 			<a class="btn primary" href="/cases/new">New case</a>
 		</div>
 	</section>
@@ -161,29 +163,33 @@ templ CasesListBody(
 	switch activeTab {
 		case "mine":
 			<p class="muted">Cases assigned to { currentUserName }.</p>
+			@stageFilterChips(stageFilter, "mine", kindFilter, assigneeFilter)
 			if len(mine) == 0 {
 				<p class="muted">Nothing assigned to you.</p>
 			} else {
 				@casesTable(mine, true, false)
 			}
 		case "triage":
-			@assigneeFilterChips(assigneeFilter, "triage", users)
+			@assigneeFilterChips(assigneeFilter, "triage", users, kindFilter, stageFilter)
+			@stageFilterChips(stageFilter, "triage", kindFilter, assigneeFilter)
 			if len(triage) == 0 {
 				<p class="muted">No cases match.</p>
 			} else {
 				@casesTable(triage, false, true)
 			}
 		case "classified":
-			@kindFilterChips(kindFilter, "classified")
-			@assigneeFilterChips(assigneeFilter, "classified", users)
+			@kindFilterChips(kindFilter, "classified", assigneeFilter, stageFilter)
+			@assigneeFilterChips(assigneeFilter, "classified", users, kindFilter, stageFilter)
+			@stageFilterChips(stageFilter, "classified", kindFilter, assigneeFilter)
 			if len(classified) == 0 {
 				<p class="muted">No classified cases match.</p>
 			} else {
 				@casesTable(classified, true, true)
 			}
 		case "closed":
-			@kindFilterChips(kindFilter, "closed")
-			@assigneeFilterChips(assigneeFilter, "closed", users)
+			@kindFilterChips(kindFilter, "closed", assigneeFilter, stageFilter)
+			@assigneeFilterChips(assigneeFilter, "closed", users, kindFilter, stageFilter)
+			@stageFilterChips(stageFilter, "closed", kindFilter, assigneeFilter)
 			if len(closed) == 0 {
 				<p class="muted">No closed cases yet.</p>
 			} else {
@@ -192,30 +198,52 @@ templ CasesListBody(
 	}
 }
 
-// assigneeFilterChips renders the assignee chip set for a status tab.
-// Each user chip shows the open-cases count to the right so a busy
-// queue is visible at a glance.
-templ assigneeFilterChips(active string, tabName string, users []UserOption) {
+// stageFilterChips renders the repair-stage chip set. Same visual
+// treatment as kind/assignee; helpers preserve sibling filters in
+// the URL so click + click + click composes filters instead of
+// resetting them.
+templ stageFilterChips(active string, tabName string, kind string, assignee string) {
 	<div class="kindfilter">
-		<span class="filter-label">Assignee</span>
-		@assigneeChip("", "All", 0, active == "" || active == "all", tabName)
-		@assigneeChip("unassigned", "Ops inbox", 0, active == "unassigned", tabName)
-		for _, u := range users {
-			@assigneeChip(u.ID.String(), firstWord(u.Label), u.OpenCount, active == u.ID.String(), tabName)
+		<span class="filter-label">Stage</span>
+		@stageChip("", "All", active == "", tabName, kind, assignee)
+		for _, s := range allStages {
+			@stageChip(s, stageUILabel(s), active == s, tabName, kind, assignee)
 		}
 	</div>
 }
 
-templ assigneeChip(value string, label string, count int, active bool, tabName string) {
+templ stageChip(value string, label string, active bool, tabName string, kind string, assignee string) {
 	if active {
-		<a class="chip active" href={ templ.URL(assigneeChipHref(value, tabName)) }>
+		<a class="chip active" href={ templ.URL(stageChipHref(value, tabName, kind, assignee)) }>{ label }</a>
+	} else {
+		<a class="chip" href={ templ.URL(stageChipHref(value, tabName, kind, assignee)) }>{ label }</a>
+	}
+}
+
+// assigneeFilterChips renders the assignee chip set for a status tab.
+// Each user chip shows the open-cases count to the right so a busy
+// queue is visible at a glance.
+templ assigneeFilterChips(active string, tabName string, users []UserOption, kind string, stage string) {
+	<div class="kindfilter">
+		<span class="filter-label">Assignee</span>
+		@assigneeChip("", "All", 0, active == "" || active == "all", tabName, kind, stage)
+		@assigneeChip("unassigned", "Ops inbox", 0, active == "unassigned", tabName, kind, stage)
+		for _, u := range users {
+			@assigneeChip(u.ID.String(), firstWord(u.Label), u.OpenCount, active == u.ID.String(), tabName, kind, stage)
+		}
+	</div>
+}
+
+templ assigneeChip(value string, label string, count int, active bool, tabName string, kind string, stage string) {
+	if active {
+		<a class="chip active" href={ templ.URL(assigneeChipHref(value, tabName, kind, stage)) }>
 			{ label }
 			if count > 0 {
 				<span class="chip-count">{ fmt.Sprint(count) }</span>
 			}
 		</a>
 	} else {
-		<a class="chip" href={ templ.URL(assigneeChipHref(value, tabName)) }>
+		<a class="chip" href={ templ.URL(assigneeChipHref(value, tabName, kind, stage)) }>
 			{ label }
 			if count > 0 {
 				<span class="chip-count">{ fmt.Sprint(count) }</span>
@@ -232,21 +260,21 @@ templ tab(href string, label string, count int, active bool) {
 	}
 }
 
-templ kindFilterChips(active string, tabName string) {
+templ kindFilterChips(active string, tabName string, assignee string, stage string) {
 	<div class="kindfilter">
 		<span class="filter-label">Kind</span>
-		@kindChip("", "All", active == "", tabName)
+		@kindChip("", "All", active == "", tabName, assignee, stage)
 		for _, k := range fault.AllKinds {
-			@kindChip(k, kindLabel(k), active == k, tabName)
+			@kindChip(k, kindLabel(k), active == k, tabName, assignee, stage)
 		}
 	</div>
 }
 
-templ kindChip(value string, label string, active bool, tabName string) {
+templ kindChip(value string, label string, active bool, tabName string, assignee string, stage string) {
 	if active {
-		<a class="chip active" href={ templ.URL(kindChipHref(value, tabName)) }>{ label }</a>
+		<a class="chip active" href={ templ.URL(kindChipHref(value, tabName, assignee, stage)) }>{ label }</a>
 	} else {
-		<a class="chip" href={ templ.URL(kindChipHref(value, tabName)) }>{ label }</a>
+		<a class="chip" href={ templ.URL(kindChipHref(value, tabName, assignee, stage)) }>{ label }</a>
 	}
 }
 
@@ -387,13 +415,14 @@ templ CaseDetailPage(nav NavUser, c CaseRow, timeline []TimelineEntry, users []U
 }
 
 templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption, documents []DocumentRow, vehicle *VehicleInfo, parts []CasePartRow, partOptions []PartOption, tele *TelemetryView) {
-	<section class="page-head">
-		<h1>Case <strong>{ c.Display() }</strong> <span class="muted">&middot; { c.ID.String()[:8] }</span></h1>
-		<a href="/cases" class="btn">Back to list</a>
-	</section>
-	@StageStepper(c)
-	@caseSummary(c, vehicle)
-	@TelemetryBlock(tele)
+	<div id="case-body">
+		<section class="page-head">
+			<h1>Case <strong>{ c.Display() }</strong> <span class="muted">&middot; { c.ID.String()[:8] }</span></h1>
+			<a href="/cases" class="btn">Back to list</a>
+		</section>
+		@StageStepper(c)
+		@caseSummary(c, vehicle)
+		@TelemetryBlock(tele)
 	<section>
 		<h2>Timeline</h2>
 		@CaseTimeline(timeline)
@@ -448,6 +477,7 @@ templ CaseDetailBody(c CaseRow, timeline []TimelineEntry, users []UserOption, do
 			</details>
 		</section>
 	}
+	</div><!-- /#case-body -->
 }
 
 templ DocumentsList(docs []DocumentRow) {
@@ -637,9 +667,8 @@ templ NoteForm(caseID uuid.UUID, data NoteFormData) {
 	<form method="POST"
 	      action={ templ.URL("/cases/" + caseID.String() + "/notes") }
 	      hx-post={ string(templ.URL("/cases/" + caseID.String() + "/notes")) }
-	      hx-target="#timeline"
+	      hx-target="#case-body"
 	      hx-swap="outerHTML"
-	      hx-on::after-request="if(event.detail.successful)this.reset()"
 	      class="form inline">
 		if data.ErrorMsg != "" {
 			<p class="error">{ data.ErrorMsg }</p>
@@ -663,7 +692,12 @@ type ClassifyFormData struct {
 }
 
 templ ClassifyForm(caseID uuid.UUID, data ClassifyFormData) {
-	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/classify") } class="form inline">
+	<form method="POST"
+	      action={ templ.URL("/cases/" + caseID.String() + "/classify") }
+	      hx-post={ "/cases/" + caseID.String() + "/classify" }
+	      hx-target="#case-body"
+	      hx-swap="outerHTML"
+	      class="form inline">
 		if data.ErrorMsg != "" {
 			<p class="error">{ data.ErrorMsg }</p>
 		}
@@ -695,7 +729,12 @@ type CloseFormData struct {
 }
 
 templ CloseForm(caseID uuid.UUID, data CloseFormData) {
-	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/close") } class="form inline">
+	<form method="POST"
+	      action={ templ.URL("/cases/" + caseID.String() + "/close") }
+	      hx-post={ "/cases/" + caseID.String() + "/close" }
+	      hx-target="#case-body"
+	      hx-swap="outerHTML"
+	      class="form inline">
 		if data.ErrorMsg != "" {
 			<p class="error">{ data.ErrorMsg }</p>
 		}
@@ -716,7 +755,12 @@ type TransferFormData struct {
 }
 
 templ TransferForm(caseID uuid.UUID, currentAssignee *uuid.UUID, users []UserOption, data TransferFormData) {
-	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/transfer") } class="form inline">
+	<form method="POST"
+	      action={ templ.URL("/cases/" + caseID.String() + "/transfer") }
+	      hx-post={ "/cases/" + caseID.String() + "/transfer" }
+	      hx-target="#case-body"
+	      hx-swap="outerHTML"
+	      class="form inline">
 		if data.ErrorMsg != "" {
 			<p class="error">{ data.ErrorMsg }</p>
 		}
@@ -799,7 +843,12 @@ templ partKindBadge(kind string) {
 // cost attribution (warranty/goodwill/out_of_warranty). For quoted,
 // the amount is mandatory.
 templ AddPartForm(caseID uuid.UUID, options []PartOption) {
-	<form method="POST" action={ templ.URL("/cases/" + caseID.String() + "/parts") } class="form inline">
+	<form method="POST"
+	      action={ templ.URL("/cases/" + caseID.String() + "/parts") }
+	      hx-post={ "/cases/" + caseID.String() + "/parts" }
+	      hx-target="#case-body"
+	      hx-swap="outerHTML"
+	      class="form inline">
 		<label>
 			P/N
 			<input id="add-part-pn" name="pn" required list="parts-options" placeholder="e.g. BAT-72V-40AH" autocomplete="off"/>

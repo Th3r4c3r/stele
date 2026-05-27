@@ -83,33 +83,58 @@ func kindLabel(k string) string {
 	}
 }
 
-// kindChipHref builds the /cases href that selects a kind filter on
-// the active tab. Empty value = "all kinds" on the same tab.
-func kindChipHref(value string, tab string) string {
-	if tab == "" {
-		tab = "classified"
-	}
-	if value == "" {
-		return "/cases?tab=" + tab
-	}
-	return "/cases?tab=" + tab + "&kind=" + value
-}
-
-// assigneeChipHref builds the /cases href that selects an assignee
-// filter on the active tab. Empty value = "all assignees".
-func assigneeChipHref(value string, tab string) string {
+// casesURL builds /cases?... preserving every filter dimension so
+// clicking one chip never clobbers another. The "override" args
+// (kind, assignee, stage) are taken as-is — pass "" to clear that
+// dimension or a value to set it. Designed so chip templates call
+// it with the same currently-active filters and only flip the one
+// being clicked.
+func casesURL(tab, kind, assignee, stage string) string {
 	if tab == "" {
 		tab = "triage"
 	}
-	if value == "" {
-		return "/cases?tab=" + tab
+	q := "/cases?tab=" + tab
+	if kind != "" {
+		q += "&kind=" + kind
 	}
-	return "/cases?tab=" + tab + "&assignee=" + value
+	if assignee != "" {
+		q += "&assignee=" + assignee
+	}
+	if stage != "" {
+		q += "&stage=" + stage
+	}
+	return q
 }
 
-// casesCSVHref points at /cases.csv with the same tab / kind /
-// assignee filters currently active on the list page.
-func casesCSVHref(tab, kind, assignee string) string {
+// kindChipHref builds the /cases href that toggles the kind filter
+// to value while preserving the other dimensions. Empty value clears
+// kind.
+func kindChipHref(value, tab, assignee, stage string) string {
+	if tab == "" {
+		tab = "classified"
+	}
+	return casesURL(tab, value, assignee, stage)
+}
+
+// assigneeChipHref toggles assignee, preserving kind + stage.
+func assigneeChipHref(value, tab, kind, stage string) string {
+	if tab == "" {
+		tab = "triage"
+	}
+	return casesURL(tab, kind, value, stage)
+}
+
+// stageChipHref toggles stage, preserving kind + assignee.
+func stageChipHref(value, tab, kind, assignee string) string {
+	if tab == "" {
+		tab = "triage"
+	}
+	return casesURL(tab, kind, assignee, value)
+}
+
+// casesCSVHref points at /cases.csv with the same filters as the
+// list page (tab/kind/assignee/stage).
+func casesCSVHref(tab, kind, assignee, stage string) string {
 	q := "?tab=" + tab
 	if kind != "" {
 		q += "&kind=" + kind
@@ -117,8 +142,36 @@ func casesCSVHref(tab, kind, assignee string) string {
 	if assignee != "" {
 		q += "&assignee=" + assignee
 	}
+	if stage != "" {
+		q += "&stage=" + stage
+	}
 	return "/cases.csv" + q
 }
+
+// stageUILabel mirrors stageBadge text without the badge styling
+// (used by filter chips).
+func stageUILabel(stage string) string {
+	switch stage {
+	case "new":
+		return "New"
+	case "diagnosis":
+		return "Diagnosis"
+	case "parts_ordered":
+		return "Parts ordered"
+	case "parts_waiting":
+		return "Awaiting parts"
+	case "repair":
+		return "Repair"
+	case "resolved":
+		return "Resolved"
+	default:
+		return stage
+	}
+}
+
+// allStages exposes fault.AllStages to templates via a wrapper, so
+// the templ file does not need its own import statement.
+var allStages = []string{"new", "diagnosis", "parts_ordered", "parts_waiting", "repair", "resolved"}
 
 // derefStr returns *s or "" if nil. Useful inside templates.
 func derefStr(s *string) string {

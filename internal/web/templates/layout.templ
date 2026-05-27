@@ -19,6 +19,18 @@ templ Layout(title string, nav NavUser) {
 			<title>{ title } — Stele</title>
 			<link rel="stylesheet" href="/static/stele.css"/>
 			<script src="/static/htmx.min.js" defer></script>
+			<!-- Theme: apply stored preference before paint to avoid FOUC. -->
+			<script>
+				(function() {
+					try {
+						var t = localStorage.getItem("stele-theme");
+						if (t === "dark" || t === "light") {
+							document.documentElement.setAttribute("data-theme", t);
+						}
+					} catch (e) {}
+				})();
+			</script>
+			<script src="/static/stele.js" defer></script>
 		</head>
 		<body>
 			<header class="topbar">
@@ -40,6 +52,7 @@ templ Layout(title string, nav NavUser) {
 					       maxlength="200"/>
 				</form>
 				<div class="user-menu">
+					<button type="button" class="theme-toggle" data-theme-toggle title="Toggle light/dark theme">◐</button>
 					<a class="user-link" href="/account" title={ nav.Email }>{ nav.Name }</a>
 					<form method="POST" action="/logout" class="inline-logout">
 						<button type="submit" class="link-button" title="Sign out">Sign out</button>

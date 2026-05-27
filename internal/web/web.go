@@ -218,6 +218,10 @@ func (h *handlers) listCases(w http.ResponseWriter, r *http.Request) {
 	if kindFilter != "" && !fault.IsKnownKind(kindFilter) {
 		kindFilter = ""
 	}
+	stageFilter := r.URL.Query().Get("stage")
+	if stageFilter != "" && !fault.IsKnownStage(stageFilter) {
+		stageFilter = ""
+	}
 
 	currentID, _ := userpkg.FromCtx(r.Context())
 	currentUser, err := h.users.ByID(r.Context(), currentID)
@@ -249,27 +253,34 @@ func (h *handlers) listCases(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Each tab's query receives the stage / kind / assignee filters
+	// only when that tab is the active one (otherwise the chips for
+	// inactive tabs would mis-render counts after the user filters).
 	triageRows, err := h.queryCases(r.Context(), "triage", "",
-		ifThenUUID(tab == "triage", assigneeFilter))
+		ifThenUUID(tab == "triage", assigneeFilter),
+		ifThen(tab == "triage", stageFilter, ""))
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
 	classifiedRows, err := h.queryCases(r.Context(), "classified",
 		ifThen(tab == "classified", kindFilter, ""),
-		ifThenUUID(tab == "classified", assigneeFilter))
+		ifThenUUID(tab == "classified", assigneeFilter),
+		ifThen(tab == "classified", stageFilter, ""))
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
 	closedRows, err := h.queryCases(r.Context(), "closed",
 		ifThen(tab == "closed", kindFilter, ""),
-		ifThenUUID(tab == "closed", assigneeFilter))
+		ifThenUUID(tab == "closed", assigneeFilter),
+		ifThen(tab == "closed", stageFilter, ""))
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
-	mineRows, err := h.queryCases(r.Context(), "", "", currentID)
+	mineRows, err := h.queryCases(r.Context(), "", "", currentID,
+		ifThen(tab == "mine", stageFilter, ""))
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -291,7 +302,7 @@ func (h *handlers) listCases(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = templates.CasesListPage(navFor(r.Context(), h.users),
 		triageRows, classifiedRows, closedRows, mineRows,
-		tab, kindFilter, assigneeParam, userOpts).Render(r.Context(), w)
+		tab, kindFilter, assigneeParam, stageFilter, userOpts).Render(r.Context(), w)
 }
 
 // userOptionsWithCounts returns one entry per active user with their
@@ -675,14 +686,7 @@ func (h *handlers) addNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Header.Get("HX-Request") == "true" {
-		waitForCaseAdvance(r.Context(), h.pool, id, 3*time.Second)
-		timeline, err := h.queryTimeline(r.Context(), id)
-		if err != nil {
-			httpErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = templates.CaseTimeline(timeline).Render(r.Context(), w)
+		h.renderCaseBodyFragment(w, r, id)
 		return
 	}
 	h.redirectToCaseAfterProjector(w, r, id)
@@ -709,6 +713,10 @@ func (h *handlers) classifyCase(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	if r.Header.Get("HX-Request") == "true" {
+		h.renderCaseBodyFragment(w, r, id)
+		return
+	}
 	h.redirectToCaseAfterProjector(w, r, id)
 }
 
@@ -731,6 +739,10 @@ func (h *handlers) closeCase(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		httpErr(w, err)
+		return
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		h.renderCaseBodyFragment(w, r, id)
 		return
 	}
 	h.redirectToCaseAfterProjector(w, r, id)
@@ -797,6 +809,10 @@ func (h *handlers) recordPart(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	if r.Header.Get("HX-Request") == "true" {
+		h.renderCaseBodyFragment(w, r, id)
+		return
+	}
 	h.redirectToCaseAfterProjector(w, r, id)
 }
 
@@ -832,22 +848,8 @@ func (h *handlers) changeStage(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
-	// HTMX path: morph stepper + timeline in place, no full reload.
-	// Plain form post falls back to redirect (accessibility-safe).
 	if r.Header.Get("HX-Request") == "true" {
-		waitForCaseAdvance(r.Context(), h.pool, id, 3*time.Second)
-		updated, err := h.queryOneCase(r.Context(), id)
-		if err != nil {
-			httpErr(w, err)
-			return
-		}
-		timeline, err := h.queryTimeline(r.Context(), id)
-		if err != nil {
-			httpErr(w, err)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = templates.StageStepperWithTimelineOOB(updated, timeline).Render(r.Context(), w)
+		h.renderCaseBodyFragment(w, r, id)
 		return
 	}
 	h.redirectToCaseAfterProjector(w, r, id)
@@ -886,6 +888,10 @@ func (h *handlers) transferCase(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	if r.Header.Get("HX-Request") == "true" {
+		h.renderCaseBodyFragment(w, r, id)
+		return
+	}
 	h.redirectToCaseAfterProjector(w, r, id)
 }
 
@@ -895,7 +901,7 @@ func (h *handlers) transferCase(w http.ResponseWriter, r *http.Request) {
 // by kindFilter and/or assigneeFilter. If status is empty AND
 // assigneeFilter is set, it acts as the "my cases" lookup (no status
 // constraint).
-func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, assigneeFilter uuid.UUID) ([]templates.CaseRow, error) {
+func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, assigneeFilter uuid.UUID, stageFilter string) ([]templates.CaseRow, error) {
 	args := []any{}
 	q := `
 		SELECT id, case_number, status, kind, dealer, vin, fault_code, description,
@@ -914,6 +920,10 @@ func (h *handlers) queryCases(ctx context.Context, status, kindFilter string, as
 	if assigneeFilter != uuid.Nil {
 		args = append(args, assigneeFilter)
 		q += fmt.Sprintf(" AND assignee_id = $%d", len(args))
+	}
+	if stageFilter != "" {
+		args = append(args, stageFilter)
+		q += fmt.Sprintf(" AND stage = $%d", len(args))
 	}
 	// Order by repair stage (canonical workflow order), most-recent
 	// first inside each stage. Operators scan from top to bottom and
@@ -1185,6 +1195,62 @@ func humanBytes(n int64) string {
 	default:
 		return fmt.Sprintf("%.1f GiB", float64(n)/float64(k*k*k))
 	}
+}
+
+// renderCaseBodyFragment is the HX-Request branch for every case
+// mutation handler: waits for the projector to apply the just-
+// appended event, fetches everything CaseDetailBody needs, then
+// renders just the body fragment (no Layout chrome). The browser's
+// hx-swap replaces #case-body in place, preserving scroll position
+// and the rest of the page.
+func (h *handlers) renderCaseBodyFragment(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+	waitForCaseAdvance(r.Context(), h.pool, id, 3*time.Second)
+	row, err := h.queryOneCase(r.Context(), id)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	if err := h.hydrateAssignees(r.Context(), []templates.CaseRow{row}); err != nil {
+		httpErr(w, err)
+		return
+	}
+	rows := []templates.CaseRow{row}
+	_ = h.hydrateAssignees(r.Context(), rows)
+	row = rows[0]
+
+	timeline, err := h.queryTimeline(r.Context(), id)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	userOpts, err := h.userOptions(r.Context())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	docs, err := h.queryDocuments(r.Context(), id)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	vehicleInfo := h.lookupVehicle(r.Context(), row.VIN)
+	caseParts, err := h.queryCaseParts(r.Context(), id)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	partOptions, err := h.partOptions(r.Context())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	teleView := h.lookupTelemetry(r.Context(), row.VIN)
+	if teleView != nil {
+		teleView.ReturnURL = "/cases/" + row.ID.String()
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = templates.CaseDetailBody(row, timeline, userOpts, docs,
+		vehicleInfo, caseParts, partOptions, teleView).Render(r.Context(), w)
 }
 
 // redirectToCaseAfterProjector waits for the projector to apply the
