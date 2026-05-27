@@ -157,6 +157,16 @@ runs on the Hetzner instance at a URL Yan can open.
 - Surfaced after M9.2 because UI case creation finally went live with
   real users. Race was pre-existing in M1 polling design. ✅
 
+## M13 — Fleet telemetry view (DONE 2026-05-27)
+- ADR-014: snapshot model (not live) for newplat live telemetry per VIN. ✅
+- Migration 0013 vehicle_telemetry (17 columns + raw_payload jsonb). ✅
+- internal/newplat HTTP client (ErrTokenInvalid / ErrNotFound). ✅
+- internal/telemetry Service/Repo + Snapshot model. ✅
+- /admin/telemetry list page + sync POST (single VIN + case-vins batch). ✅
+- TelemetryBlock embedded in case detail (best-effort, no snapshot = no block). ✅
+- Migration 0014: drop FK on vehicles.vin (telemetry tolerates orphan VINs). ✅
+- Smoke verified e2e on real online VIN.
+
 ## M12 — Admin audit log (DONE 2026-05-26)
 - Migration 0012 admin_audit (append-only, denormalised actor_email). ✅
 - AuditAdminActions middleware: records 2xx/3xx /admin/* mutations
