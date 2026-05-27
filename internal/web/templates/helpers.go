@@ -51,6 +51,16 @@ func humanDatePtr(t *time.Time) string {
 	return t.UTC().Format("2006-01-02")
 }
 
+// telemetryReturn picks the return URL for the TelemetryBlock's
+// Refresh button. Empty input => default to /cases (list). Keeps
+// the template free of conditional logic in the value attribute.
+func telemetryReturn(url string) string {
+	if url == "" {
+		return "/cases"
+	}
+	return url
+}
+
 // kindLabel returns a UI-friendly label for a kind. Kept in plain Go
 // (not in a .templ) so it is callable from inside template expressions
 // as a regular function.

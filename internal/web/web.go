@@ -464,6 +464,9 @@ func (h *handlers) showCase(w http.ResponseWriter, r *http.Request) {
 	// for this VIN. Absent telemetry repo (token unconfigured) or
 	// missing snapshot both fall to nil → block renders nothing.
 	teleView := h.lookupTelemetry(r.Context(), row.VIN)
+	if teleView != nil {
+		teleView.ReturnURL = "/cases/" + row.ID.String()
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = templates.CaseDetailPage(navFor(r.Context(), h.users), row, timeline, userOpts, docs,
 		vehicleInfo, caseParts, partOptions, teleView).Render(r.Context(), w)

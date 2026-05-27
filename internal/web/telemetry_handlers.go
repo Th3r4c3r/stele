@@ -56,8 +56,12 @@ func (t *telemetryHandlers) sync(w http.ResponseWriter, r *http.Request) {
 	}
 	mode := strings.TrimSpace(r.PostForm.Get("mode"))
 	singleVIN := strings.ToUpper(strings.TrimSpace(r.PostForm.Get("vin")))
-	redirect := strings.TrimSpace(r.PostForm.Get("return"))
-	if redirect == "" {
+	// safeReturn (auth_handlers.go) defaults to /cases on empty/unsafe;
+	// for the telemetry surface the operationally-meaningful default
+	// is /admin/telemetry, so we re-derive it here.
+	rawReturn := strings.TrimSpace(r.PostForm.Get("return"))
+	redirect := safeReturn(rawReturn)
+	if redirect == "/cases" && rawReturn == "" {
 		redirect = "/admin/telemetry"
 	}
 

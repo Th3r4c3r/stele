@@ -43,6 +43,11 @@ type TelemetryView struct {
 	FotaVersion      string
 	Latitude         *float64
 	Longitude        *float64
+	// ReturnURL is the path the Refresh button redirects to after the
+	// sync POST. Set by the embedding page (e.g. /cases/<id>) so the
+	// operator lands back where they started instead of on /cases.
+	// Empty => falls back to /cases.
+	ReturnURL string
 }
 
 // AdminTelemetryPage is the /admin/telemetry list.
@@ -151,7 +156,7 @@ templ TelemetryBlock(t *TelemetryView) {
 				<span class="muted small">snapshot { humanTimeAgo(t.SnapshotAt) }</span>
 				<form method="POST" action="/admin/telemetry/sync" class="tg-refresh">
 					<input type="hidden" name="vin" value={ t.VIN }/>
-					<input type="hidden" name="return" value={ "/cases" }/>
+					<input type="hidden" name="return" value={ telemetryReturn(t.ReturnURL) }/>
 					<button type="submit" class="link-button">Refresh now</button>
 				</form>
 			</div>
