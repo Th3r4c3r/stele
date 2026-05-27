@@ -176,13 +176,15 @@ func Mount(mux *http.ServeMux, d Deps) {
 	if err != nil {
 		panic(fmt.Sprintf("static FS sub: %v", err))
 	}
-	// Static assets: 1-day client cache + immutable hint. The
-	// FileServer already emits Last-Modified, so revalidating clients
-	// get 304s for free. Files small enough that 24h is a sane
-	// tradeoff between churn and re-download cost.
+	// Static assets: short client cache. The embed.FS does not emit
+	// a Last-Modified header (modtime is the build time, zero for
+	// embedded files), so we cannot rely on conditional GETs for
+	// revalidation. 5 minutes keeps the bandwidth saving without
+	// trapping the operator on stale assets after a deploy. Bumping
+	// this to 24h is safe once we add a versioned URL query param.
 	staticHandler := http.StripPrefix("/static/", http.FileServerFS(staticFS))
 	mux.Handle("GET /static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Header().Set("Cache-Control", "public, max-age=300")
 		staticHandler.ServeHTTP(w, r)
 	}))
 }
