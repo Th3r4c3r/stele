@@ -157,6 +157,18 @@ runs on the Hetzner instance at a URL Yan can open.
 - Surfaced after M9.2 because UI case creation finally went live with
   real users. Race was pre-existing in M1 polling design. ✅
 
+## M14 — Repair workflow stage + stepper (DONE 2026-05-27)
+- Second axis orthogonal to status: stage in {new, diagnosis,
+  parts_ordered, parts_waiting, repair, resolved}. ✅
+- Migration 0016 adds stage + stage_changed_at to current_cases
+  with backfill (closed → resolved). ✅
+- StageChanged event + ChangeStage command. Projector pins
+  stage='resolved' on CaseClosed. ✅
+- Horizontal stepper at top of case detail with day-counter on
+  current stage; closed cases render read-only. ✅
+- Per-stage analytics (avg time, key-to-key, stuck) deferred to
+  M14.1 — collect 1-2 weeks of real data first.
+
 ## M13 — Fleet telemetry view (DONE 2026-05-27)
 - ADR-014: snapshot model (not live) for newplat live telemetry per VIN. ✅
 - Migration 0013 vehicle_telemetry (17 columns + raw_payload jsonb). ✅
