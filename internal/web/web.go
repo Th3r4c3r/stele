@@ -174,7 +174,15 @@ func Mount(mux *http.ServeMux, d Deps) {
 	if err != nil {
 		panic(fmt.Sprintf("static FS sub: %v", err))
 	}
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticFS)))
+	// Static assets: 1-day client cache + immutable hint. The
+	// FileServer already emits Last-Modified, so revalidating clients
+	// get 304s for free. Files small enough that 24h is a sane
+	// tradeoff between churn and re-download cost.
+	staticHandler := http.StripPrefix("/static/", http.FileServerFS(staticFS))
+	mux.Handle("GET /static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		staticHandler.ServeHTTP(w, r)
+	}))
 }
 
 type handlers struct {

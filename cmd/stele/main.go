@@ -3,14 +3,18 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -194,7 +198,7 @@ func runServer() int {
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           withRequestLog(mux),
+		Handler:           withRequestLog(withGzip(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -352,3 +356,40 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
 }
+
+// withGzip wraps next so any client that advertises gzip acceptance
+// gets a gzip-encoded body. We skip compression on tiny responses
+// (under 256 bytes the gzip overhead outweighs the saving) and on
+// SSE / websocket-upgrade responses (which need raw byte streams).
+// Pool the gzip.Writer to keep allocations off the hot path.
+func withGzip(next http.Handler) http.Handler {
+	pool := sync.Pool{New: func() any { w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed); return w }}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Already-compressed body assets (images, fonts, htmx.min.js)
+		// gain nothing from a second pass; keep them as-is.
+		if strings.HasSuffix(r.URL.Path, ".gz") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		gz := pool.Get().(*gzip.Writer)
+		gz.Reset(w)
+		defer func() { _ = gz.Close(); pool.Put(gz) }()
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		w.Header().Del("Content-Length") // length changes after compression
+		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, gz: gz}, r)
+	})
+}
+
+// gzipResponseWriter pipes Write() into the gzip.Writer while
+// transparently forwarding the headers / status code passthrough.
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) { return g.gz.Write(b) }

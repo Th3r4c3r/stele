@@ -40,6 +40,10 @@ services:
       # Documents storage (ADR-010). The host bind-mount is below.
       STELE_DOCS_DIR: /data/documents
       STELE_DOCS_MAX_BYTES: ${STELE_DOCS_MAX_BYTES:-26214400}
+      # Projection runner poll interval. Default 2000ms; the read-
+      # after-write wait in case-mutation handlers benefits from a
+      # snappier tick. The poll is a cheap SELECT on the cursor table.
+      STELE_PROJECTION_POLL_INTERVAL_MS: ${STELE_PROJECTION_POLL_INTERVAL_MS:-250}
       # newplat for telemetry sync (ADR-014).
       # Modes:
       #   1. account + password set => auto-refresh client (recommended).
