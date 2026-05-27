@@ -86,11 +86,12 @@ func Mount(mux *http.ServeMux, d Deps) {
 		baseURL:    d.BaseURL,
 	}
 	masters := &mastersHandlers{
-		pool:     d.Pool,
-		vehicles: d.Vehicles,
-		parts:    d.Parts,
-		users:    d.Users,
-		newplat:  d.Newplat,
+		pool:         d.Pool,
+		vehicles:     d.Vehicles,
+		parts:        d.Parts,
+		users:        d.Users,
+		newplat:      d.Newplat,
+		telemetrySvc: d.TelemetrySvc,
 	}
 
 	auditRepo := audit.NewRepo(d.Pool)

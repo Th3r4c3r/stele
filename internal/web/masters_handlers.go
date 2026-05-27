@@ -10,9 +10,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"log/slog"
+
 	"github.com/Th3r4c3r/stele/internal/audit"
 	"github.com/Th3r4c3r/stele/internal/newplat"
 	"github.com/Th3r4c3r/stele/internal/part"
+	"github.com/Th3r4c3r/stele/internal/telemetry"
 	userpkg "github.com/Th3r4c3r/stele/internal/user"
 	"github.com/Th3r4c3r/stele/internal/vehicle"
 	"github.com/Th3r4c3r/stele/internal/web/templates"
@@ -24,11 +27,12 @@ import (
 // optional ImportReportView pointer; on POST upload, run the import,
 // re-fetch the list, and render the same page with the report.
 type mastersHandlers struct {
-	pool     *pgxpool.Pool
-	vehicles *vehicle.Repo
-	parts    *part.Repo
-	users    *userpkg.Repo
-	newplat  *newplat.Client // nil disables /admin/vehicles/import-from-vin
+	pool         *pgxpool.Pool
+	vehicles     *vehicle.Repo
+	parts        *part.Repo
+	users        *userpkg.Repo
+	newplat      *newplat.Client    // nil disables /admin/vehicles/import-from-vin
+	telemetrySvc *telemetry.Service // optional; if set, import-from-vin also stores a telemetry snapshot
 }
 
 // --- vehicles ---
@@ -323,7 +327,23 @@ func (m *mastersHandlers) vehicleImportFromVINCommit(w http.ResponseWriter, r *h
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
-	audit.SetSummary(r.Context(), fmt.Sprintf("imported vehicle %s (model %s) from newplat", vin, modelCode))
+	// Operator intent on this surface is "I want to know this VIN
+	// fully". Piggy-back a telemetry snapshot on the same trip so
+	// the case detail's TelemetryBlock lights up immediately, no
+	// second click required. Best-effort: a failure here does not
+	// abort the vehicle import (audit captures the partial success).
+	teleStatus := "no telemetry sync (service disabled)"
+	if m.telemetrySvc != nil {
+		if _, err := m.telemetrySvc.Sync(r.Context(), vin); err != nil {
+			slog.Error("import-from-vin telemetry sync failed",
+				"vin", vin, "err", err)
+			teleStatus = "telemetry sync failed: " + err.Error()
+		} else {
+			teleStatus = "telemetry snapshot stored"
+		}
+	}
+	audit.SetSummary(r.Context(), fmt.Sprintf("imported vehicle %s (model %s) from newplat; %s",
+		vin, modelCode, teleStatus))
 	http.Redirect(w, r, ret, http.StatusSeeOther)
 }
 
