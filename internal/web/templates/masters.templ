@@ -45,8 +45,9 @@ type ImportRowError struct {
 }
 
 // VINImportPreview is what the GET /admin/vehicles/import-from-vin
-// page renders: newplat-prefilled form fields the operator confirms
-// or edits before committing the upsert.
+// page renders. When NotFoundReason != "" the page operates in
+// "manual import" mode: no newplat fields, the operator picks model
+// from the dropdown using only what they know about the bike.
 type VINImportPreview struct {
 	VIN              string
 	NewplatModelName string // raw newplat carModelName (display only)
@@ -59,31 +60,42 @@ type VINImportPreview struct {
 	SoldAt           string // YYYY-MM-DD
 	ReturnURL        string
 	ErrorMsg         string
+	NotFoundReason   string // non-empty switches the page to manual mode
 }
 
-// VINImportNotFound renders when newplat has no record for the VIN.
-type VINImportNotFound struct {
-	VIN       string
-	ReturnURL string
-	Reason    string // e.g., "newplat: not found", token issue, network error
-}
+// (VINImportNotFound dead struct removed Session 20 — newplat-miss
+// cases now reuse AdminVINImportPage with NotFoundReason set.)
 
 templ AdminVINImportPage(nav NavUser, p VINImportPreview) {
 	@AdminShell("Admin · import VIN", nav) {
 		<section class="page-head">
-			<h1>Import VIN <code>{ p.VIN }</code> from newplat</h1>
+			if p.NotFoundReason != "" {
+				<h1>Import VIN <code>{ p.VIN }</code> manually</h1>
+			} else {
+				<h1>Import VIN <code>{ p.VIN }</code> from newplat</h1>
+			}
 			if p.ReturnURL != "" {
 				<a href={ templ.SafeURL(p.ReturnURL) } class="btn">Cancel</a>
 			} else {
 				<a href="/admin/vehicles" class="btn">Cancel</a>
 			}
 		</section>
-		<p class="muted">
-			We pulled this VIN from newplat. Confirm or edit the fields below;
-			the model dropdown is pre-selected on a name match when we found
-			one, otherwise pick from the list. Submit creates a row in the
-			vehicles master.
-		</p>
+		if p.NotFoundReason != "" {
+			<p class="muted">
+				newplat could not pre-fill this VIN: <em>{ p.NotFoundReason }</em>.
+				You can still add the bike to the master manually — pick the
+				model from the dropdown using what you know about it. The
+				manufacturer year was derived from the VIN's 10th character
+				(ISO 3779). Other fields are optional.
+			</p>
+		} else {
+			<p class="muted">
+				We pulled this VIN from newplat. Confirm or edit the fields below;
+				the model dropdown is pre-selected on a name match when we found
+				one, otherwise pick from the list. Submit creates a row in the
+				vehicles master.
+			</p>
+		}
 		if p.ErrorMsg != "" {
 			<p class="error">{ p.ErrorMsg }</p>
 		}
@@ -144,30 +156,6 @@ templ AdminVINImportPage(nav NavUser, p VINImportPreview) {
 				<button type="submit" class="btn primary">Import this VIN</button>
 			</div>
 		</form>
-	}
-}
-
-templ AdminVINImportNotFound(nav NavUser, p VINImportNotFound) {
-	@AdminShell("Admin · import VIN", nav) {
-		<section class="page-head">
-			<h1>VIN <code>{ p.VIN }</code> not on newplat</h1>
-			if p.ReturnURL != "" {
-				<a href={ templ.SafeURL(p.ReturnURL) } class="btn">Back</a>
-			} else {
-				<a href="/admin/vehicles" class="btn">Back</a>
-			}
-		</section>
-		<p>
-			Reason: <code>{ p.Reason }</code>
-		</p>
-		<p>
-			This VIN is not present on newplat, so we can't pre-fill it
-			automatically. Options:
-		</p>
-		<ul>
-			<li>Wait until the bike is activated on newplat (operator action).</li>
-			<li>Use the bulk CSV import on <a href="/admin/vehicles">/admin/vehicles</a>.</li>
-		</ul>
 	}
 }
 

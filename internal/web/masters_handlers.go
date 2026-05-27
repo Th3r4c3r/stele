@@ -245,31 +245,32 @@ func (m *mastersHandlers) vehicleImportFromVINPage(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Fetch newplat. ErrNotFound → friendly "not on newplat" page;
-	// ErrTokenInvalid (after the client tried auto-refresh) → same
-	// page with a token-issue hint; other errors → same page with
-	// the raw error.
-	detail, err := m.newplat.FetchVIN(r.Context(), vin)
-	if err != nil {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = templates.AdminVINImportNotFound(navFor(r.Context(), m.users),
-			templates.VINImportNotFound{VIN: vin, ReturnURL: ret, Reason: friendlyNewplatErr(err)}).
-			Render(r.Context(), w)
-		return
-	}
-
 	models, err := m.vehicles.ListModels(r.Context())
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
-
 	preview := templates.VINImportPreview{
 		VIN:              vin,
 		ReturnURL:        ret,
 		ManufacturedYear: vehicle.YearFromVIN(vin),
 		Models:           toAdminModelRows(models),
 	}
+
+	// Fetch newplat. Any error (not found, token invalid, network)
+	// switches the page to "manual import" mode: same form, no
+	// newplat pre-fill, hint banner. The operator can still create
+	// the vehicle row by picking the model from the dropdown.
+	detail, err := m.newplat.FetchVIN(r.Context(), vin)
+	if err != nil {
+		preview.NotFoundReason = friendlyNewplatErr(err)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = templates.AdminVINImportPage(navFor(r.Context(), m.users), preview).
+			Render(r.Context(), w)
+		return
+	}
+
+	// Newplat returned data: pre-fill what we can map.
 	if detail.Pojo != nil {
 		preview.NewplatCountry = "" // pojo.countryCode is a mobile code, not ISO
 	}
