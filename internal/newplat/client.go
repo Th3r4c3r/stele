@@ -194,6 +194,7 @@ type Pojo struct {
 	Longitude      float64 `json:"longitude"`
 	LoginTime      string  `json:"loginTime"`
 	LastGpsTime    string  `json:"lastGpsTime"`
+	CreateTime     string  `json:"createTime"` // proxy for bike↔user bind time
 	BmsTemperature int     `json:"bmsTemperature"`
 	FotaVer        string  `json:"fota_ver"`
 }

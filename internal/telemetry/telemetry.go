@@ -31,6 +31,7 @@ type Snapshot struct {
 	ICCID            *string
 	SimEndTime       *time.Time
 	AgreementEndTime *time.Time
+	BindTime         *time.Time
 	LastOnlineAt     *time.Time
 	LoginTime        *time.Time
 	SOCPct           *int
@@ -154,6 +155,12 @@ func projectDetail(d *newplat.Detail) *Snapshot {
 		if t := newplat.ParseNewplatTime(d.Pojo.LoginTime); !t.IsZero() {
 			s.LoginTime = &t
 		}
+		if t := newplat.ParseNewplatTime(d.Pojo.CreateTime); !t.IsZero() {
+			// pojo.createTime captures when the bike↔user binding was
+			// established on newplat; we expose it in the UI as
+			// "Bind time" because that matches operator vocabulary.
+			s.BindTime = &t
+		}
 		s.SOCPct = intPtr(d.Pojo.NowElec)
 		s.EnduranceKm = intPtr(d.Pojo.Endurance)
 		if d.Pojo.Latitude != 0 {
@@ -198,11 +205,12 @@ func (r *Repo) Upsert(ctx context.Context, s *Snapshot, raw []byte) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO vehicle_telemetry (
 			vin, snapshot_at, is_online, imei, iccid,
-			sim_end_time, agreement_end_time, last_online_at, login_time,
+			sim_end_time, agreement_end_time, bind_time,
+			last_online_at, login_time,
 			soc_pct, endurance_km, total_mileage_km,
 			latitude, longitude, bms_temperature, gsm_signal, gps_satellites,
 			fota_version, raw_payload
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		ON CONFLICT (vin) DO UPDATE SET
 			snapshot_at        = EXCLUDED.snapshot_at,
 			is_online          = EXCLUDED.is_online,
@@ -210,6 +218,7 @@ func (r *Repo) Upsert(ctx context.Context, s *Snapshot, raw []byte) error {
 			iccid              = EXCLUDED.iccid,
 			sim_end_time       = EXCLUDED.sim_end_time,
 			agreement_end_time = EXCLUDED.agreement_end_time,
+			bind_time          = EXCLUDED.bind_time,
 			last_online_at     = EXCLUDED.last_online_at,
 			login_time         = EXCLUDED.login_time,
 			soc_pct            = EXCLUDED.soc_pct,
@@ -223,7 +232,8 @@ func (r *Repo) Upsert(ctx context.Context, s *Snapshot, raw []byte) error {
 			fota_version       = EXCLUDED.fota_version,
 			raw_payload        = EXCLUDED.raw_payload
 	`, s.VIN, s.SnapshotAt, s.IsOnline, s.IMEI, s.ICCID,
-		s.SimEndTime, s.AgreementEndTime, s.LastOnlineAt, s.LoginTime,
+		s.SimEndTime, s.AgreementEndTime, s.BindTime,
+		s.LastOnlineAt, s.LoginTime,
 		s.SOCPct, s.EnduranceKm, s.TotalMileageKm,
 		s.Latitude, s.Longitude, s.BMSTemperature, s.GSMSignal, s.GPSSatellites,
 		s.FotaVersion, raw)
@@ -238,7 +248,8 @@ func (r *Repo) ByVIN(ctx context.Context, vin string) (*Snapshot, error) {
 	var s Snapshot
 	err := r.pool.QueryRow(ctx, selectColumns+` WHERE vin = $1`, vin).Scan(
 		&s.VIN, &s.SnapshotAt, &s.IsOnline, &s.IMEI, &s.ICCID,
-		&s.SimEndTime, &s.AgreementEndTime, &s.LastOnlineAt, &s.LoginTime,
+		&s.SimEndTime, &s.AgreementEndTime, &s.BindTime,
+		&s.LastOnlineAt, &s.LoginTime,
 		&s.SOCPct, &s.EnduranceKm, &s.TotalMileageKm,
 		&s.Latitude, &s.Longitude, &s.BMSTemperature, &s.GSMSignal, &s.GPSSatellites,
 		&s.FotaVersion,
@@ -267,7 +278,8 @@ func (r *Repo) ListRecent(ctx context.Context, limit int) ([]Snapshot, error) {
 		var s Snapshot
 		if err := rows.Scan(
 			&s.VIN, &s.SnapshotAt, &s.IsOnline, &s.IMEI, &s.ICCID,
-			&s.SimEndTime, &s.AgreementEndTime, &s.LastOnlineAt, &s.LoginTime,
+			&s.SimEndTime, &s.AgreementEndTime, &s.BindTime,
+			&s.LastOnlineAt, &s.LoginTime,
 			&s.SOCPct, &s.EnduranceKm, &s.TotalMileageKm,
 			&s.Latitude, &s.Longitude, &s.BMSTemperature, &s.GSMSignal, &s.GPSSatellites,
 			&s.FotaVersion,
@@ -305,7 +317,8 @@ func (r *Repo) CaseVINs(ctx context.Context) ([]string, error) {
 
 const selectColumns = `
 	SELECT vin, snapshot_at, is_online, imei, iccid,
-	       sim_end_time, agreement_end_time, last_online_at, login_time,
+	       sim_end_time, agreement_end_time, bind_time,
+	       last_online_at, login_time,
 	       soc_pct, endurance_km, total_mileage_km,
 	       latitude, longitude, bms_temperature, gsm_signal, gps_satellites,
 	       fota_version

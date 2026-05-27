@@ -31,6 +31,8 @@ type TelemetryView struct {
 	ICCID            string
 	SimEndTime       *time.Time
 	SimExpiringSoon  bool
+	AgreementEndTime *time.Time
+	BindTime         *time.Time
 	LastOnlineAt     *time.Time
 	SOCPct           *int
 	EnduranceKm      *int
@@ -139,95 +141,124 @@ templ AdminTelemetryPage(nav NavUser, rows []TelemetryRow, openCaseVINCount, lim
 }
 
 // TelemetryBlock is the per-VIN inline block embedded in case detail.
+// Three semantic sections (Live / Lifecycle / Device) keep the
+// information scannable without forcing one giant flat grid.
 templ TelemetryBlock(t *TelemetryView) {
 	if t != nil {
 		<section class="telemetry-block">
-			<h3>Telemetry <small class="muted">snapshot { humanTimeAgo(t.SnapshotAt) }</small></h3>
-			<div class="telemetry-grid">
-				<div class="tg-cell">
-					<div class="tg-label">Status</div>
-					<div class="tg-value">
-						if t.IsOnline {
-							<span class="dot dot-online">●</span> <strong>online</strong>
-						} else {
-							<span class="dot dot-offline">●</span> <span class="muted">offline</span>
-						}
-					</div>
-				</div>
-				<div class="tg-cell">
-					<div class="tg-label">SOC</div>
-					<div class="tg-value">
-						if t.SOCPct != nil {
-							<strong>{ fmt.Sprint(*t.SOCPct) }%</strong>
-						} else {
-							<span class="muted">—</span>
-						}
-					</div>
-				</div>
-				<div class="tg-cell">
-					<div class="tg-label">Range</div>
-					<div class="tg-value">
-						if t.EnduranceKm != nil {
-							{ fmt.Sprint(*t.EnduranceKm) } km
-						} else {
-							<span class="muted">—</span>
-						}
-					</div>
-				</div>
-				<div class="tg-cell">
-					<div class="tg-label">Last seen</div>
-					<div class="tg-value">{ humanTimeAgoPtr(t.LastOnlineAt) }</div>
-				</div>
-				<div class="tg-cell">
-					<div class="tg-label">SIM ends</div>
-					<div class="tg-value">
-						if t.SimExpiringSoon {
-							<span class="warning">{ humanDatePtr(t.SimEndTime) }</span>
-						} else {
-							{ humanDatePtr(t.SimEndTime) }
-						}
-					</div>
-				</div>
-				<div class="tg-cell">
-					<div class="tg-label">Mileage</div>
-					<div class="tg-value">
-						if t.TotalMileageKm != nil {
-							{ fmt.Sprintf("%.1f", *t.TotalMileageKm) } km
-						} else {
-							<span class="muted">—</span>
-						}
-					</div>
-				</div>
-				if t.BMSTemperature != nil {
-					<div class="tg-cell">
-						<div class="tg-label">BMS temp</div>
-						<div class="tg-value">{ fmt.Sprint(*t.BMSTemperature) } °C</div>
-					</div>
-				}
-				if t.FotaVersion != "" {
-					<div class="tg-cell">
-						<div class="tg-label">Firmware</div>
-						<div class="tg-value"><code>{ t.FotaVersion }</code></div>
-					</div>
-				}
-				if t.IMEI != "" {
-					<div class="tg-cell">
-						<div class="tg-label">IMEI</div>
-						<div class="tg-value"><small><code>{ t.IMEI }</code></small></div>
-					</div>
-				}
-				if t.ICCID != "" {
-					<div class="tg-cell">
-						<div class="tg-label">ICCID</div>
-						<div class="tg-value"><small><code>{ t.ICCID }</code></small></div>
-					</div>
-				}
+			<div class="tg-head">
+				<h3>Telemetry</h3>
+				<span class="muted small">snapshot { humanTimeAgo(t.SnapshotAt) }</span>
+				<form method="POST" action="/admin/telemetry/sync" class="tg-refresh">
+					<input type="hidden" name="vin" value={ t.VIN }/>
+					<input type="hidden" name="return" value={ "/cases" }/>
+					<button type="submit" class="link-button">Refresh now</button>
+				</form>
 			</div>
-			<form method="POST" action="/admin/telemetry/sync" class="inline">
-				<input type="hidden" name="vin" value={ t.VIN }/>
-				<input type="hidden" name="return" value={ "/cases" }/>
-				<button type="submit" class="link-button">Refresh now</button>
-			</form>
+
+			<div class="tg-section">
+				<div class="tg-section-label">Live</div>
+				<div class="tg-grid">
+					<div class="tg-cell">
+						<div class="tg-label">Status</div>
+						<div class="tg-value">
+							if t.IsOnline {
+								<span class="dot dot-online">●</span> <strong>online</strong>
+							} else {
+								<span class="dot dot-offline">●</span> <span class="muted">offline</span>
+							}
+						</div>
+					</div>
+					<div class="tg-cell">
+						<div class="tg-label">SOC</div>
+						<div class="tg-value">
+							if t.SOCPct != nil {
+								<strong>{ fmt.Sprint(*t.SOCPct) }%</strong>
+							} else {
+								<span class="muted">—</span>
+							}
+						</div>
+					</div>
+					<div class="tg-cell">
+						<div class="tg-label">Range</div>
+						<div class="tg-value">
+							if t.EnduranceKm != nil {
+								{ fmt.Sprint(*t.EnduranceKm) } km
+							} else {
+								<span class="muted">—</span>
+							}
+						</div>
+					</div>
+					<div class="tg-cell">
+						<div class="tg-label">Last seen</div>
+						<div class="tg-value">{ humanTimeAgoPtr(t.LastOnlineAt) }</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="tg-section">
+				<div class="tg-section-label">Lifecycle</div>
+				<div class="tg-grid">
+					<div class="tg-cell">
+						<div class="tg-label">Bind time</div>
+						<div class="tg-value">{ humanDatePtr(t.BindTime) }</div>
+					</div>
+					<div class="tg-cell">
+						<div class="tg-label">SIM ends</div>
+						<div class="tg-value">
+							if t.SimExpiringSoon {
+								<span class="warning">{ humanDatePtr(t.SimEndTime) }</span>
+							} else {
+								{ humanDatePtr(t.SimEndTime) }
+							}
+						</div>
+					</div>
+					<div class="tg-cell">
+						<div class="tg-label">Service ends</div>
+						<div class="tg-value">{ humanDatePtr(t.AgreementEndTime) }</div>
+					</div>
+					<div class="tg-cell">
+						<div class="tg-label">Mileage</div>
+						<div class="tg-value">
+							if t.TotalMileageKm != nil {
+								{ fmt.Sprintf("%.1f", *t.TotalMileageKm) } km
+							} else {
+								<span class="muted">—</span>
+							}
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="tg-section">
+				<div class="tg-section-label">Device</div>
+				<div class="tg-grid">
+					if t.BMSTemperature != nil {
+						<div class="tg-cell">
+							<div class="tg-label">BMS temp</div>
+							<div class="tg-value">{ fmt.Sprint(*t.BMSTemperature) } °C</div>
+						</div>
+					}
+					if t.FotaVersion != "" {
+						<div class="tg-cell">
+							<div class="tg-label">Firmware</div>
+							<div class="tg-value"><code class="small">{ t.FotaVersion }</code></div>
+						</div>
+					}
+					if t.IMEI != "" {
+						<div class="tg-cell">
+							<div class="tg-label">IMEI</div>
+							<div class="tg-value"><code class="small">{ t.IMEI }</code></div>
+						</div>
+					}
+					if t.ICCID != "" {
+						<div class="tg-cell">
+							<div class="tg-label">ICCID</div>
+							<div class="tg-value"><code class="small">{ t.ICCID }</code></div>
+						</div>
+					}
+				</div>
+			</div>
 		</section>
 	}
 }

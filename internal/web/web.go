@@ -481,19 +481,21 @@ func (h *handlers) lookupTelemetry(ctx context.Context, vin string) *templates.T
 		return nil
 	}
 	v := &templates.TelemetryView{
-		VIN:            s.VIN,
-		SnapshotAt:     s.SnapshotAt,
-		IsOnline:       s.IsOnline,
-		SimEndTime:     s.SimEndTime,
-		LastOnlineAt:   s.LastOnlineAt,
-		SOCPct:         s.SOCPct,
-		EnduranceKm:    s.EnduranceKm,
-		TotalMileageKm: s.TotalMileageKm,
-		BMSTemperature: s.BMSTemperature,
-		GSMSignal:      s.GSMSignal,
-		GPSSatellites:  s.GPSSatellites,
-		Latitude:       s.Latitude,
-		Longitude:      s.Longitude,
+		VIN:              s.VIN,
+		SnapshotAt:       s.SnapshotAt,
+		IsOnline:         s.IsOnline,
+		SimEndTime:       s.SimEndTime,
+		AgreementEndTime: s.AgreementEndTime,
+		BindTime:         s.BindTime,
+		LastOnlineAt:     s.LastOnlineAt,
+		SOCPct:           s.SOCPct,
+		EnduranceKm:      s.EnduranceKm,
+		TotalMileageKm:   s.TotalMileageKm,
+		BMSTemperature:   s.BMSTemperature,
+		GSMSignal:        s.GSMSignal,
+		GPSSatellites:    s.GPSSatellites,
+		Latitude:         s.Latitude,
+		Longitude:        s.Longitude,
 	}
 	if s.IMEI != nil {
 		v.IMEI = *s.IMEI

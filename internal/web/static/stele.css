@@ -497,3 +497,78 @@ ol.timeline time {
 }
 ol.timeline strong { color: var(--accent); }
 ol.timeline p { margin: 4px 0 0; font-size: 14px; }
+
+/* === Telemetry block (M13 / ADR-014) ============================ */
+.telemetry-block {
+	margin: 18px 0;
+	padding: 16px 18px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+}
+.telemetry-block .tg-head {
+	display: flex;
+	align-items: baseline;
+	gap: 12px;
+	margin-bottom: 14px;
+}
+.telemetry-block .tg-head h3 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+}
+.telemetry-block .tg-head .tg-refresh {
+	margin-left: auto;
+}
+.telemetry-block .tg-section {
+	margin-top: 12px;
+	padding-top: 10px;
+	border-top: 1px dashed var(--border);
+}
+.telemetry-block .tg-section:first-of-type {
+	margin-top: 0;
+	padding-top: 0;
+	border-top: 0;
+}
+.telemetry-block .tg-section-label {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--fg-muted);
+	margin-bottom: 8px;
+}
+.telemetry-block .tg-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: 12px 20px;
+}
+.telemetry-block .tg-cell {
+	min-width: 0;
+}
+.telemetry-block .tg-label {
+	font-size: 11px;
+	color: var(--fg-muted);
+	margin-bottom: 2px;
+}
+.telemetry-block .tg-value {
+	font-size: 14px;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+}
+.telemetry-block .tg-value code,
+.telemetry-block .tg-value code.small {
+	font-size: 12px;
+	background: rgba(0,0,0,0.04);
+	padding: 1px 5px;
+	border-radius: 3px;
+}
+.telemetry-block .warning {
+	color: #b45309;
+	font-weight: 600;
+}
+.telemetry-block .dot {
+	font-size: 11px;
+	vertical-align: middle;
+}
+.dot-online  { color: #16a34a; }
+.dot-offline { color: #9ca3af; }
